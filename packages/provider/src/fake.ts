@@ -24,9 +24,12 @@ export class FakeAiProvider implements AiProvider {
       ok: true,
       raw: {
         summary: [
-          `Shift complete. ${facts.completedTitles.length} task(s) finished.`,
-          `${facts.pendingTitles.length} task(s) left for handover.`,
-          `${facts.blockedTitles.length} task(s) blocked.`,
+          `Shift ${facts.date}: ${facts.counts.completed} completed, ${facts.counts.cancelled} cancelled, ${facts.counts.active + facts.counts.inProgress} in progress, ${facts.counts.blocked} blocked, ${facts.counts.overdue} overdue.`,
+          ...(facts.warnings.length > 0
+            ? [
+                `${facts.warnings.length} warning(s): ${facts.warnings.map((w) => w.type).join(", ")}.`,
+              ]
+            : ["No warnings."]),
         ].join(" "),
       },
     }

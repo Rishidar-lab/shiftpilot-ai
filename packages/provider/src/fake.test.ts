@@ -4,7 +4,12 @@ import { FakeAiProvider } from "./fake.js"
 
 describe("FakeAiProvider", () => {
   const provider = new FakeAiProvider()
-  const ctx = { date: "2026-08-12", startMin: 540, endMin: 1080 }
+  const ctx = {
+    id: "shift-1",
+    date: "2026-08-12",
+    startAt: "2026-08-12T06:00:00.000Z",
+    endAt: "2026-08-12T14:00:00.000Z",
+  }
 
   describe("extractTasks", () => {
     it("splits lines into titled tasks deterministically", async () => {
@@ -32,17 +37,34 @@ describe("FakeAiProvider", () => {
   })
 
   describe("generateHandover", () => {
-    it("produces a deterministic summary from facts", async () => {
+    it("produces a deterministic summary from structured facts", async () => {
       const attempt = await provider.generateHandover({
-        completedTitles: ["Cold chain check", "Restock aisle 3"],
-        pendingTitles: ["Counts"],
-        blockedTitles: [],
+        shiftId: "shift-1",
+        date: "2026-08-12",
+        generatedAt: "2026-08-12T13:00:00.000Z",
+        counts: {
+          total: 5,
+          active: 1,
+          inProgress: 1,
+          completed: 2,
+          blocked: 1,
+          cancelled: 0,
+          overdue: 1,
+          waiting: 1,
+        },
+        completed: [],
+        pending: [],
+        blocked: [],
+        overdue: [],
+        upcomingDeadlines: [],
+        warnings: [{ type: "dependency_cycle", taskIds: ["a", "b"] }],
+        recommendations: [],
       })
       expect(attempt.ok).toBe(true)
       if (!attempt.ok) return
       expect(attempt.raw).toEqual({
         summary:
-          "Shift complete. 2 task(s) finished. 1 task(s) left for handover. 0 task(s) blocked.",
+          "Shift 2026-08-12: 2 completed, 0 cancelled, 2 in progress, 1 blocked, 1 overdue. 1 warning(s): dependency_cycle.",
       })
     })
   })
