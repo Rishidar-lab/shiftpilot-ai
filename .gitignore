@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+build/
+out/
+
+# env / secrets — never commit
+.env
+.env.*
+!.env.example
+
+# local data
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# coverage / test artifacts
+coverage/

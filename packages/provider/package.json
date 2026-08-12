@@ -1,0 +1,22 @@
+{
+  "name": "@shiftpilot/provider",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI provider boundary: AiProvider interface, deterministic FakeAiProvider. No model SDK beyond this package.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@shiftpilot/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@shiftpilot/domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure framework-independent domain logic. ZERO runtime dependencies by design.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}
