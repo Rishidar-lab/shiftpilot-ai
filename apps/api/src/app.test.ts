@@ -3,14 +3,17 @@ import { describe, expect, it } from "vitest"
 import { HealthResponse } from "@shiftpilot/contracts"
 import { buildApp } from "./app.js"
 import { parseAppConfig } from "./config.js"
+import { openDatabase } from "./db/index.js"
 
-function makeTestConfig() {
-  return parseAppConfig({ NODE_ENV: "test" })
+function makeTestApp() {
+  const config = parseAppConfig({ NODE_ENV: "test" })
+  const db = openDatabase(":memory:")
+  return { app: buildApp({ config, db }), db }
 }
 
 describe("GET /health", () => {
   it("returns a valid health envelope at /api/health", async () => {
-    const app = buildApp({ config: makeTestConfig() })
+    const { app } = makeTestApp()
     const response = await app.inject({ method: "GET", url: "/api/health" })
 
     expect(response.statusCode).toBe(200)
@@ -22,13 +25,13 @@ describe("GET /health", () => {
   })
 
   it("exposes a bare /health for infrastructure probes", async () => {
-    const app = buildApp({ config: makeTestConfig() })
+    const { app } = makeTestApp()
     const response = await app.inject({ method: "GET", url: "/health" })
     expect(response.statusCode).toBe(200)
   })
 
   it("returns a typed 404 envelope for unknown routes", async () => {
-    const app = buildApp({ config: makeTestConfig() })
+    const { app } = makeTestApp()
     const response = await app.inject({ method: "GET", url: "/nope" })
 
     expect(response.statusCode).toBe(404)
