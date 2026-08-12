@@ -119,24 +119,24 @@ SQLite columns use snake_case (`packages/api/src/db/schema.ts` mirrors contracts
 
 ### Entities
 
+All shapes live in `packages/contracts` as zod schemas (the single source of truth); the API
+mirrors them into snake_case SQLite columns (`apps/api/src/db/schema.ts`).
+
 ```
-Shift      id · date(ISO) · startMin · endMin (minutes since midnight) · role ·
-           status(open|closed) · createdAt
-RawInput   id · shiftId · text · source(text|paste|voice) ·
-           status(processing|extracted|failed) · provider · errorCode? · createdAt
-Task       id · shiftId · inputId? · title · notes?
-           category(category enum) · estimateMin(5–480) · deadlineAt? · deadlineSource
-             (parsed|manual|unresolved|null)
-           location? · status(task status) · priorityScore · priorityBucket
-           priorityReason(json breakdown) · dependencyIds(predecessors, ordered)
-           overrideBias(-50..+50) · inCycle(0|1) · createdAt · updatedAt · completedAt?
-Handover   id · shiftId · generatedAt · provider · summaryMd · facts(json) ·
-           degraded(0|1)
+Shift      id · date(ISO date) · startAt(ISO) · endAt(ISO) · role · createdAt(ISO)
+Task       id · shiftId · title · category(enum) · estimatedMinutes(1–480|null)
+           deadlineAt?(ISO) · deadlineSource(manual|parsed|unresolved)
+           explicitUrgency(none|low|medium|high|critical)
+           status(draft|active|in_progress|blocked|completed|cancelled)
+           dependsOn[](predecessor ids) · blockReason? · notes?
+           createdAt · updatedAt · completedAt?
 ```
 
-Schedules and sequences are **derived projections** — computed on demand by domain engines,
-never persisted. This eliminates stale-plan bugs by construction: the plan shown is always a
-pure function of current task state plus "now".
+`RawInput` and persisted `Handover` rows are M2/M3 territory (capture pipeline + handover
+storage). M1 persists **shifts + tasks + task_dependencies** only; the schedule, sequence,
+next-decision, and handover **facts are derived projections** — computed on demand by domain
+engines, never persisted. This eliminates stale-plan bugs by construction: the plan shown is
+always a pure function of current task state plus "now".
 
 ### Task lifecycle (explicit state machine, enforced in domain)
 
@@ -155,20 +155,25 @@ effect the plan projection reports; the engine recommends, the UI confirms).
 
 ### Priority engine (deterministic)
 
-Score = clamped sum of weighted components; **every component is attributable** so the UI can
-explain "why this task is next".
+Score = sum of weighted components (no clamp cap in M1); **every component is attributable** so
+the UI can explain "why this task is next". Weights are module-level constants in
+`packages/domain/src/constants.ts`, tuned by table-driven tests (see §8). The explicit
+`explicitUrgency` enum **replaces** the original `overrideBias` number: a transparent,
+categorised user signal rather than an opaque ±50 knob.
 
-| Component        | Range    | Rule                                                                                |
-| ---------------- | -------- | ----------------------------------------------------------------------------------- |
-| Deadline urgency | 0–40     | Overdue → 40. Else `40·(1 − minutesLeft/480)` clamped ≥ 0. No deadline → 0          |
-| Blocks work      | 0–20     | `min(20, 5 × outDegree)` — tasks unblocking others rise                             |
-| Category weight  | 0–12     | compliance/safety 12 · customer 10 · walkthrough 8 · training 6 · admin 4 · break 1 |
-| Waiting credit   | 0–5      | `min(5, hoursSinceCapture)` — stale tasks creep up, saturate fast                   |
-| User override    | −50..+50 | explicit "make urgent / demote", stored as `overrideBias`                           |
+| Component          | Range     | Rule                                                                                          |
+| ------------------ | --------- | --------------------------------------------------------------------------------------------- |
+| Overdue            | +50 fixed | task past `deadlineAt` (alone can reach the critical bucket)                                  |
+| Deadline proximity | 0–40      | `40·(1 − min(minutesLeft,480)/480)` clamped ≥ 0. No deadline → 0                              |
+| Explicit urgency   | 0–40      | critical 40 · high 25 · medium 12 · low 0 · none 0                                            |
+| Unblocks others    | 0–20      | `min(20, 5 × outDegree)` — tasks unblocking others rise                                       |
+| Category weight    | 0–12      | compliance/safety 12 · customer 10 · walkthrough 8 · training 6 · other 5 · admin 4 · break 1 |
+| Waiting credit     | 0–5       | `min(5, hoursSinceCapture)` — stale tasks creep up, saturate fast                             |
+| Quick task         | +3        | estimate ≤15m                                                                                 |
+| Continuity (next)  | +15       | already `in_progress` — keep the worker productive                                            |
 
-Bucket: ≥60 critical · ≥40 high · ≥20 medium · else low. Components, weights, and buckets are
-module-level constants tuned by table-driven tests (see §8). The reason breakdown is stored
-with the task and rendered as human text (`"due in 25m · unblocks 2 tasks · customer-facing"`).
+Bucket: **≥55 critical · ≥35 high · ≥20 medium · else low**. The reason breakdown is returned
+with every ranked task and rendered as human text (`"overdue by 1h05m · customer-facing · unblocks 2 tasks"`).
 
 ### Sequence engine
 
@@ -199,6 +204,24 @@ list with blocker titles, flags (overdue, unresolved deadlines, cycles, overflow
 recommendations (high-priority incomplete + blocked items). The model drafts prose around
 these facts (§5); the facts themselves are never LLM-generated — **no fabricated metrics by
 construction**.
+
+### M1 API surface (implemented)
+
+All routes are prefixed with `/api` (bare `/health` is a probe). Planning endpoints are pure
+domain projections recomputed per request; `?now=<ISO>` overrides the clock for deterministic
+replay/tests. Errors use the unified envelope `{ error: { code, message, details? } }`.
+
+- `POST /api/shifts` · `GET /api/shifts` · `GET /api/shifts/:id`
+- `POST /api/shifts/:shiftId/tasks` · `GET /api/tasks/:id`
+- `PATCH /api/tasks/:id` (state-machine transition + field edits, validated by `checkTransition`)
+- `POST /api/tasks/:id/block` (reason required)
+- `GET /api/shifts/:id/plan` (full `WorkPlan`) · `GET /api/shifts/:id/next` (`NextDecision`) ·
+  `GET /api/shifts/:id/handover` (`HandoverFacts`)
+
+Persistence: SQLite + Drizzle (`better-sqlite3`, WAL), tables `shifts` / `tasks` /
+`task_dependencies` (PK `task_id+depends_on_id`, self-loop `CHECK`, FK cascade), migrations
+applied at boot via `drizzle-kit`. The natural-language capture → extraction → validation
+pipeline and persisted handovers land in M2/M3.
 
 ## 5. Claude API boundaries
 

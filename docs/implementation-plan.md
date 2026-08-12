@@ -64,10 +64,12 @@ one concern, mergeable independently).
 
 ### D-04 · Priority engine with explain
 
-- **Scope**: component scorer (deadline 0–40, blocks 0–20, category 0–12, waiting 0–5,
-  override −50..+50), buckets, `priorityReason` breakdown, `explain(reason)` → human text.
-- **Acceptance**: table tests incl. overrides, overdue, tie-breaking; weights are module
-  constants.
+- **Scope**: component scorer (overdue +50, deadline proximity 0–40, explicitUrgency
+  none/low/medium/high/critical → 0/0/12/25/40, unblocks 0–20, category 0–12, waiting 0–5,
+  quick +3, continuity +15), buckets (≥55 critical · ≥35 high · ≥20 medium · else low),
+  `priorityReason` breakdown rendered as human text.
+- **Acceptance**: table tests incl. explicit urgency, overdue, tie-breaking; weights are
+  module-level constants in `packages/domain/src/constants.ts`.
 - **Done when**: ≥90% coverage; sample reasons read correctly.
 
 ### D-05 · Sequence engine (DAG, Kahn) + cycle detection
