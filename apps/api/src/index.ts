@@ -1,8 +1,17 @@
+import { mkdirSync } from "node:fs"
+import { dirname } from "node:path"
+
 import { buildApp } from "./app.js"
 import { parseAppConfig } from "./config.js"
+import { openDatabase } from "./db/index.js"
 
 const config = parseAppConfig(process.env)
-const app = buildApp({ config })
+if (config.databasePath !== ":memory:") {
+  mkdirSync(dirname(config.databasePath), { recursive: true })
+}
+const db = openDatabase(config.databasePath)
+
+const app = buildApp({ config, db })
 
 app
   .listen({ port: config.port, host: config.host })

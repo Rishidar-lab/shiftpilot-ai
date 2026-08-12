@@ -14,17 +14,23 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsup",
     "start": "node --env-file-if-exists=.env dist/index.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",
     "@shiftpilot/contracts": "workspace:*",
     "@shiftpilot/domain": "workspace:*",
     "@shiftpilot/provider": "workspace:*",
-    "fastify": "^5.0.0"
+    "better-sqlite3": "^11.8.0",
+    "drizzle-orm": "^0.38.0",
+    "fastify": "^5.0.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^22.0.0",
+    "drizzle-kit": "^0.30.0",
     "tsup": "^8.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.9.0"

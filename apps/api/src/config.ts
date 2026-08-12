@@ -27,6 +27,7 @@ export const envSchema = z.object({
   ),
   AI_PROVIDER: z.preprocess(emptyToUndefined, z.enum(["fake", "claude"]).optional()),
   AI_TIMEOUT_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
+  DATABASE_PATH: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
 })
 
 type ParsedEnv = z.infer<typeof envSchema>
@@ -38,6 +39,7 @@ export interface AppConfig {
   nodeEnv: "development" | "test" | "production"
   aiProvider: "fake" | "claude"
   aiTimeoutMs: number
+  databasePath: string
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -47,6 +49,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   nodeEnv: "development",
   aiProvider: "fake",
   aiTimeoutMs: 30000,
+  databasePath: "data/shiftpilot.db",
 }
 
 function applyDefaults(env: ParsedEnv): AppConfig {
@@ -57,6 +60,7 @@ function applyDefaults(env: ParsedEnv): AppConfig {
     nodeEnv: env.NODE_ENV ?? DEFAULT_CONFIG.nodeEnv,
     aiProvider: env.AI_PROVIDER ?? DEFAULT_CONFIG.aiProvider,
     aiTimeoutMs: env.AI_TIMEOUT_MS ?? DEFAULT_CONFIG.aiTimeoutMs,
+    databasePath: env.DATABASE_PATH ?? DEFAULT_CONFIG.databasePath,
   }
 }
 
