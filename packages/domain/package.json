@@ -13,6 +13,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
+  "dependencies": {
+    "@shiftpilot/contracts": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "^5.9.0"
   }
