@@ -13,6 +13,7 @@ export function makeShift(overrides: Partial<Shift> = {}): Shift {
     date: "2026-08-12",
     startAt: SHIFT_START,
     endAt: SHIFT_END,
+    timezone: "UTC",
     role: null,
     createdAt: "2026-08-12T05:00:00.000Z",
     ...overrides,

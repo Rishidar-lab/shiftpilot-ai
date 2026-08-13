@@ -1,4 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // AbortSignal is a platform type; the provider interface takes one so a
+    // caller's timeout can cancel an in-flight request. DOM is included for the
+    // type declaration only — this package still imports nothing at runtime.
+    "lib": ["ES2022", "DOM"]
+  },
   "include": ["src"]
 }

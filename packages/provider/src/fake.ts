@@ -21,6 +21,7 @@ export class FakeAiProvider implements AiProvider {
   readonly meta: AiProviderMeta = {
     id: "fake",
     label: "Fake (offline heuristic) — simulated, not a real LLM",
+    isFake: true,
     promptId: "shiftpilot.task-extract",
     promptVersion: "fake-1",
   }
@@ -37,7 +38,7 @@ export class FakeAiProvider implements AiProvider {
 
     let raw: unknown
     try {
-      raw = { tasks: extractCandidates(input, _ctx) }
+      raw = { tasks: extractCandidates(input) }
     } catch (err) {
       return {
         ok: false,
@@ -118,7 +119,7 @@ const FIXTURES: Array<{ match: RegExp; tasks: Array<Partial<CandidateFields>> }>
 interface CandidateFields {
   title: string
   description: string | null
-  deadlineAt: string | null
+  deadlineHint: string | null
   estimatedMinutes: number | null
   explicitUrgency: string | null
   category: string | null
@@ -127,7 +128,7 @@ interface CandidateFields {
   sourceText: string
 }
 
-function extractCandidates(input: string, ctx: ShiftContext): CandidateFields[] {
+function extractCandidates(input: string): CandidateFields[] {
   const text = input.trim()
   if (text.length === 0) return []
 
@@ -136,7 +137,7 @@ function extractCandidates(input: string, ctx: ShiftContext): CandidateFields[] 
       return fixture.tasks.map((t) => ({
         title: t.title ?? "Untitled task",
         description: t.description ?? null,
-        deadlineAt: t.deadlineAt ?? null,
+        deadlineHint: t.deadlineHint ?? null,
         estimatedMinutes: t.estimatedMinutes ?? null,
         explicitUrgency: t.explicitUrgency ?? null,
         category: t.category ?? null,
@@ -150,26 +151,26 @@ function extractCandidates(input: string, ctx: ShiftContext): CandidateFields[] 
   return splitLines(text)
     .map(stripListMarker)
     .filter((line) => line.length > 0)
-    .map((line) => extractOne(line, ctx))
+    .map(extractOne)
 }
 
-function extractOne(line: string, ctx: ShiftContext): CandidateFields {
+function extractOne(line: string): CandidateFields {
   const title = line.trim()
-  const deadlineAt = parseDeadline(line, ctx)
+  const deadlineHint = findDeadlineHint(line)
   const estimatedMinutes = parseDuration(line)
   const explicitUrgency = parseUrgency(line)
   const category = parseCategory(line)
   const dependencies = parseDependencies(line)
 
   const ambiguity: string[] = []
-  if (explicitUrgency === "critical" && deadlineAt === null) {
-    ambiguity.push("Flagged urgent but no deadline was detected")
+  if (explicitUrgency === "critical" && deadlineHint === null) {
+    ambiguity.push("Flagged urgent but no deadline was stated")
   }
 
   return {
     title,
     description: null,
-    deadlineAt,
+    deadlineHint,
     estimatedMinutes,
     explicitUrgency,
     category,
@@ -179,54 +180,42 @@ function extractOne(line: string, ctx: ShiftContext): CandidateFields {
   }
 }
 
-const DEADLINE_CUES = /\b(by|before|due|at|on|eod|end of (?:shift|day)|deadline)\b/i
+const DEADLINE_CUES = /\b(by|before|due|at|on|eod|end of (?:shift|day)|deadline|in)\b/i
 
-function parseDeadline(line: string, ctx: ShiftContext): string | null {
+/**
+ * Locate the VERBATIM deadline phrase — this provider deliberately does no date
+ * arithmetic. Turning "by 2pm" into an instant depends on the shift's calendar
+ * date and time zone, which is deterministic domain policy
+ * (packages/domain/src/time.ts), not a provider concern. Doing it here once
+ * produced UTC-stamped local times (audit A-20) and meant the fake and a real
+ * model could disagree about what the same words meant.
+ */
+function findDeadlineHint(line: string): string | null {
   const lower = line.toLowerCase()
-  if (/\b(eod|end of (?:shift|day))\b/.test(lower)) return ctx.endAt
 
-  const time12 = line.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i)
-  if (time12 && time12[3] && DEADLINE_CUES.test(lower)) {
-    const hourStr = time12[1]
-    const minStr = time12[2]
-    if (!hourStr) return null
-    let hour = parseInt(hourStr, 10)
-    const minute = minStr ? parseInt(minStr, 10) : 0
-    const mer = time12[3].toLowerCase()
-    if (mer === "pm" && hour !== 12) hour += 12
-    if (mer === "am" && hour === 12) hour = 0
-    return toIso(ctx.date, hour, minute)
-  }
+  const endOfShift = lower.match(/\b(eod|end of (?:the )?(?:shift|day)|before close|closing)\b/)
+  if (endOfShift && endOfShift[0]) return endOfShift[0]
 
-  const time24 = line.match(/(\d{1,2}):(\d{2})/)
-  if (time24 && DEADLINE_CUES.test(lower)) {
-    const hourStr = time24[1]
-    const minStr = time24[2]
-    if (!hourStr || !minStr) return null
-    return toIso(ctx.date, parseInt(hourStr, 10), parseInt(minStr, 10))
-  }
+  if (!DEADLINE_CUES.test(lower)) return null
 
-  const word = lower.match(/\b(morning|noon|afternoon|evening)\b/)
-  if (word && word[1] && DEADLINE_CUES.test(lower)) {
-    const map: Record<string, [number, number]> = {
-      morning: [9, 0],
-      noon: [12, 0],
-      afternoon: [15, 0],
-      evening: [18, 0],
-    }
-    const mapped = map[word[1]]
-    if (!mapped) return null
-    const [h, m] = mapped
-    return toIso(ctx.date, h, m)
-  }
+  const relative = lower.match(/\bin \d{1,4}\s*(?:m|min|mins|minute|minutes|h|hr|hrs|hour|hours)\b/)
+  if (relative && relative[0]) return relative[0]
+
+  const time12 = lower.match(/\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/)
+  if (time12 && time12[0]) return withTomorrow(lower, time12[0])
+
+  const time24 = lower.match(/\b\d{1,2}:\d{2}\b/)
+  if (time24 && time24[0]) return withTomorrow(lower, time24[0])
+
+  const named = lower.match(/\b(morning|noon|midday|afternoon|evening|midnight)\b/)
+  if (named && named[0]) return withTomorrow(lower, named[0])
 
   return null
 }
 
-function toIso(date: string, hour: number, minute: number): string {
-  const hh = String(hour).padStart(2, "0")
-  const mm = String(minute).padStart(2, "0")
-  return `${date}T${hh}:${mm}:00.000Z`
+/** Keep "tomorrow" attached to the phrase so the domain can resolve the date. */
+function withTomorrow(lower: string, phrase: string): string {
+  return /\btomorrow\b/.test(lower) ? `tomorrow ${phrase}` : phrase
 }
 
 function parseDuration(line: string): number | null {

@@ -21,6 +21,11 @@ export type HandoverAttempt = { ok: true; raw: unknown } | { ok: false; failure:
 export interface AiProviderMeta {
   id: string
   label: string
+  /**
+   * Declared by the implementation, never inferred from `id`. Simulated output
+   * must be labelled as simulated everywhere it is shown (docs/architecture.md §5).
+   */
+  isFake: boolean
   promptId: string
   promptVersion: string
 }
@@ -33,6 +38,11 @@ export interface AiProviderMeta {
  */
 export interface AiProvider {
   readonly meta: AiProviderMeta
-  extractTasks(input: string, ctx: ShiftContext): Promise<ExtractionAttempt>
-  generateHandover(facts: HandoverFacts): Promise<HandoverAttempt>
+  /**
+   * `signal` lets the caller's timeout actually ABORT the in-flight request
+   * rather than merely stop waiting for it — an unaborted HTTP call keeps
+   * consuming provider quota after the API has already given up.
+   */
+  extractTasks(input: string, ctx: ShiftContext, signal?: AbortSignal): Promise<ExtractionAttempt>
+  generateHandover(facts: HandoverFacts, signal?: AbortSignal): Promise<HandoverAttempt>
 }
