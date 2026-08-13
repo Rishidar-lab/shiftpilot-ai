@@ -5,9 +5,14 @@ on:
     branches: [main, dev]
   pull_request:
 
+# No secrets are used anywhere in this workflow: the test suite runs entirely
+# against the deterministic offline provider, and no job may make a paid API
+# call (docs/architecture.md §8).
 jobs:
   ci:
     runs-on: ubuntu-latest
+    env:
+      AI_PROVIDER: fake
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -18,5 +23,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm format
       - run: pnpm test
       - run: pnpm build
+
+      # Proves the migration chain applies cleanly to an EMPTY database, which
+      # the unit tests (all on :memory:) would still pass without.
+      # DATABASE_PATH is resolved by the API process, whose working directory is
+      # apps/api — hence the absolute path.
+      - name: Fresh database migration smoke test
+        run: |
+          rm -rf .ci-data
+          DATABASE_PATH="$PWD/.ci-data/ci.db" pnpm db:migrate
+          test -f .ci-data/ci.db
+          # Re-running must be a no-op, not an error.
+          DATABASE_PATH="$PWD/.ci-data/ci.db" pnpm db:migrate
