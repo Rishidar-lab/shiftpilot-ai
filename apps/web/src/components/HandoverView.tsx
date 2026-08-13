@@ -1,5 +1,8 @@
+import { useState } from "react"
+
+import { ApiError } from "../api/client.js"
 import type { ApiClient } from "../api/client.js"
-import type { HandoverFacts } from "@shiftpilot/contracts"
+import type { HandoverFacts, HandoverNarrative, HandoverResponse } from "@shiftpilot/contracts"
 import { useAsync } from "../use-async.js"
 import { AsyncPanel } from "./AsyncPanel.js"
 
@@ -20,6 +23,7 @@ export function HandoverView({ client, shiftId }: { client: ApiClient; shiftId: 
         onRetry={handover.reload}
         render={(h) => (
           <>
+            <NarrativePanel client={client} shiftId={shiftId} facts={h} />
             <p className="hint">
               Deterministic facts for this shift, computed from the database — not written by a
               model.
@@ -77,6 +81,137 @@ export function HandoverView({ client, shiftId }: { client: ApiClient; shiftId: 
         )}
       />
     </section>
+  )
+}
+
+type NarrativeState =
+  | { status: "idle" }
+  | { status: "generating" }
+  | { status: "ready"; narrative: HandoverNarrative }
+  | { status: "degraded"; reason: string; detail: string }
+
+/**
+ * AI prose over the top of the facts, on explicit request only.
+ *
+ * Three rules this panel enforces visually:
+ *  - the facts below are always rendered, whatever happens here;
+ *  - AI-written text is always labelled as AI-written;
+ *  - a failure is always visible and always retryable — never blank space, and
+ *    never a spinner that has quietly stopped meaning anything (audit A-24).
+ */
+function NarrativePanel({
+  client,
+  shiftId,
+  facts,
+}: {
+  client: ApiClient
+  shiftId: string
+  facts: HandoverFacts
+}) {
+  const [state, setState] = useState<NarrativeState>({ status: "idle" })
+
+  async function generate() {
+    setState({ status: "generating" })
+    try {
+      const response: HandoverResponse = await client.generateHandoverNarrative(shiftId)
+      if (response.narrative) {
+        setState({ status: "ready", narrative: response.narrative })
+        return
+      }
+      setState({
+        status: "degraded",
+        reason: response.degraded?.reason ?? "provider_failure",
+        detail: response.degraded?.detail ?? "The AI summary was unavailable.",
+      })
+    } catch (error) {
+      // A transport/HTTP failure lands here; a provider failure arrives as a
+      // degraded 200 above. Both end in the same visible, recoverable state.
+      setState({
+        status: "degraded",
+        reason: "provider_failure",
+        detail: error instanceof ApiError ? error.message : "The AI summary request failed.",
+      })
+    }
+  }
+
+  const titles = new Map<string, string>([
+    ...facts.completed.map((t) => [t.taskId, t.title] as const),
+    ...facts.pending.map((t) => [t.taskId, t.title] as const),
+    ...facts.blocked.map((t) => [t.taskId, t.title] as const),
+    ...facts.overdue.map((t) => [t.taskId, t.title] as const),
+  ])
+
+  return (
+    <div className="narrative">
+      <div className="row between">
+        <h3>Summary</h3>
+        <button
+          type="button"
+          onClick={generate}
+          disabled={state.status === "generating" || facts.counts.total === 0}
+        >
+          {state.status === "generating"
+            ? "Writing…"
+            : state.status === "idle"
+              ? "Write AI summary"
+              : "Rewrite"}
+        </button>
+      </div>
+
+      {state.status === "idle" && (
+        <p className="hint">
+          The facts below are already complete. An AI summary is optional — it rephrases them for
+          the next worker and adds nothing to them.
+        </p>
+      )}
+
+      {state.status === "generating" && (
+        <p className="loading" role="status" aria-busy="true">
+          Asking the AI provider to draft a summary…
+        </p>
+      )}
+
+      {state.status === "degraded" && (
+        <div className="banner warning" role="alert">
+          <strong>AI summary unavailable — showing verified facts only.</strong>
+          <p className="hint">
+            {state.detail}
+            {state.reason === "unknown_task_reference" &&
+              " The draft referred to a task that is not in this shift, so it was rejected."}
+          </p>
+          <div className="row">
+            <button type="button" onClick={generate}>
+              Try again
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state.status === "ready" && (
+        <div className="ai-summary">
+          <p className="ai-label">
+            <span className="badge">AI-written</span> Drafted by the AI provider from the facts
+            below. The facts, not this text, are the record.
+          </p>
+          <h4>{state.narrative.headline}</h4>
+          <p>{state.narrative.summary}</p>
+          {state.narrative.attention.length > 0 && (
+            <>
+              <h5>Look at first</h5>
+              <ul>
+                {state.narrative.attention.map((item) => (
+                  <li key={item.taskId}>
+                    {/* Title comes from the facts, never from the model. */}
+                    <strong>{titles.get(item.taskId) ?? "Task"}</strong>
+                    <span className="muted"> · {item.why}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

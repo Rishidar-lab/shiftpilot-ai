@@ -2,6 +2,7 @@ import {
   ApiErrorEnvelope,
   ExtractionReport,
   HandoverFacts,
+  HandoverResponse,
   HealthResponse,
   NextDecision,
   RawInput,
@@ -149,6 +150,19 @@ export class ApiClient {
   getHandover(shiftId: string, now?: string): Promise<HandoverFacts> {
     const query = now ? `?now=${encodeURIComponent(now)}` : ""
     return this.request("GET", `/shifts/${shiftId}/handover${query}`, HandoverFacts.parse)
+  }
+
+  /**
+   * Requests AI-drafted prose. Spends provider tokens, so it is only ever called
+   * from an explicit user action — never on render.
+   */
+  generateHandoverNarrative(shiftId: string, now?: string): Promise<HandoverResponse> {
+    const query = now ? `?now=${encodeURIComponent(now)}` : ""
+    return this.request(
+      "POST",
+      `/shifts/${shiftId}/handover/narrative${query}`,
+      HandoverResponse.parse,
+    )
   }
 }
 

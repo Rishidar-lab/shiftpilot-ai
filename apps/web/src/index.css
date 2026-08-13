@@ -409,6 +409,63 @@ label.toggle {
   white-space: nowrap;
 }
 
+/* Base pill, for badges that are not the provider indicator. */
+.badge {
+  display: inline-block;
+  border: 1px solid #3f3f46;
+  background: #1c1c22;
+  color: #d4d4d8;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+/*
+ * An inferred duration is the model's guess, not something the worker said.
+ * It has to LOOK different from a stated value, or the interface quietly
+ * presents a guess as a fact (docs/architecture.md §5).
+ */
+.inferred {
+  color: #fde68a;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* --- AI-drafted handover prose ------------------------------------------ */
+
+.narrative {
+  border: 1px solid #2b2b33;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+.narrative h3 {
+  margin: 0;
+}
+.ai-summary {
+  border-left: 3px solid #3f3f46;
+  padding-left: 0.85rem;
+  margin-top: 0.75rem;
+}
+.ai-summary h4 {
+  margin: 0.5rem 0 0.25rem;
+  color: #f4f4f7;
+}
+.ai-summary h5 {
+  margin: 0.75rem 0 0.25rem;
+  color: #9ca3af;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+/* AI-written text is always visibly attributed. */
+.ai-label {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  margin: 0;
+}
+
 /* Frontline workers are on phones: one column, larger touch targets. */
 @media (max-width: 560px) {
   .grid {

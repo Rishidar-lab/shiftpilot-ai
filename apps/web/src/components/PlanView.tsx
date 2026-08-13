@@ -104,7 +104,7 @@ export function PlanView({ client, shiftId }: { client: ApiClient; shiftId: stri
             )}
 
             {data.warnings.length > 0 && (
-              <div className="banner warning">
+              <div className="banner warning" role="status">
                 {data.warnings.map((w, i) => (
                   <div key={i}>{describeWarning(w.type)}</div>
                 ))}
@@ -181,7 +181,12 @@ function TaskActions({
           Block
         </button>
       )}
-      {task.status !== "completed" && (
+      {/*
+       * Only offer the shortcut when the primary action is not already
+       * "complete" — otherwise an in-progress task shows two buttons that do
+       * exactly the same thing, and the user has to guess whether they differ.
+       */}
+      {task.status !== "completed" && primary?.to !== "completed" && (
         <button type="button" onClick={() => onStatus("completed")} disabled={busy}>
           Mark done
         </button>
