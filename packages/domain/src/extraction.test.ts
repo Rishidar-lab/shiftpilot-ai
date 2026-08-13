@@ -32,6 +32,7 @@ function candidate(over: Record<string, unknown> = {}) {
     description: null,
     deadlineHint: null,
     estimatedMinutes: null,
+    estimatedMinutesSource: null,
     explicitUrgency: null,
     category: null,
     dependencies: [],

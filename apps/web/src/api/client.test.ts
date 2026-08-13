@@ -24,6 +24,8 @@ describe("ApiClient", () => {
           provider: "fake",
           providerLabel: "Fake (offline heuristic) — simulated, not a real LLM",
           providerIsFake: true,
+          model: null,
+          promptVersion: "fake-1",
           time: "2026-08-12T00:00:00.000Z",
         }),
       ),

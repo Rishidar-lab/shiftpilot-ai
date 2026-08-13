@@ -42,10 +42,67 @@ describe("parseAppConfig", () => {
     expect(config.port).toBe(8787)
   })
 
-  it("fails fast on AI_PROVIDER=claude until the real provider is wired", () => {
-    expect(() => parseAppConfig({ AI_PROVIDER: "claude" })).toThrow(
-      /AI_PROVIDER=claude is not wired yet/,
-    )
+  describe("claude provider configuration", () => {
+    it("refuses to start when the key or model is missing", () => {
+      expect(() => parseAppConfig({ AI_PROVIDER: "claude" })).toThrow(
+        /requires ANTHROPIC_API_KEY and ANTHROPIC_MODEL/,
+      )
+      expect(() => parseAppConfig({ AI_PROVIDER: "claude", ANTHROPIC_API_KEY: "sk-test" })).toThrow(
+        /requires ANTHROPIC_MODEL/,
+      )
+      expect(() => parseAppConfig({ AI_PROVIDER: "claude", ANTHROPIC_MODEL: "a-model" })).toThrow(
+        /requires ANTHROPIC_API_KEY/,
+      )
+    })
+
+    // Failing to start is the point: silently serving simulated output while the
+    // operator believes a real model is running would be worse than an outage.
+    it("never degrades to the fake provider when claude is misconfigured", () => {
+      expect(() => parseAppConfig({ AI_PROVIDER: "claude" })).toThrow()
+      expect(parseAppConfig({ AI_PROVIDER: "fake" }).anthropic).toBeNull()
+    })
+
+    it("resolves claude settings with documented defaults", () => {
+      const config = parseAppConfig({
+        AI_PROVIDER: "claude",
+        ANTHROPIC_API_KEY: "sk-test",
+        ANTHROPIC_MODEL: "a-model",
+      })
+      expect(config.aiProvider).toBe("claude")
+      expect(config.anthropic).toEqual({
+        apiKey: "sk-test",
+        model: "a-model",
+        maxOutputTokens: 4096,
+        maxRetries: 2,
+      })
+    })
+
+    it("honours explicit output, retry and effort overrides", () => {
+      const config = parseAppConfig({
+        AI_PROVIDER: "claude",
+        ANTHROPIC_API_KEY: "sk-test",
+        ANTHROPIC_MODEL: "a-model",
+        ANTHROPIC_MAX_OUTPUT_TOKENS: "2048",
+        ANTHROPIC_MAX_RETRIES: "1",
+        ANTHROPIC_EFFORT: "low",
+      })
+      expect(config.anthropic?.maxOutputTokens).toBe(2048)
+      expect(config.anthropic?.maxRetries).toBe(1)
+      expect(config.anthropic?.effort).toBe("low")
+    })
+
+    it("rejects unbounded retry and output settings", () => {
+      const base = { AI_PROVIDER: "claude", ANTHROPIC_API_KEY: "k", ANTHROPIC_MODEL: "m" }
+      expect(() => parseAppConfig({ ...base, ANTHROPIC_MAX_RETRIES: "50" })).toThrow(
+        /Invalid environment configuration/,
+      )
+      expect(() => parseAppConfig({ ...base, ANTHROPIC_MAX_OUTPUT_TOKENS: "9999999" })).toThrow(
+        /Invalid environment configuration/,
+      )
+      expect(() => parseAppConfig({ ...base, ANTHROPIC_EFFORT: "turbo" })).toThrow(
+        /Invalid environment configuration/,
+      )
+    })
   })
 
   it("applies cost-control defaults and honours overrides", () => {

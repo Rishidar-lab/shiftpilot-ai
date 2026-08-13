@@ -18,7 +18,14 @@ import type { ExtractionDraft, Task } from "@shiftpilot/contracts"
 
 /** Controllable provider for deterministic API tests (no real LLM). */
 class StubProvider implements AiProvider {
-  meta = { id: "fake", label: "stub", isFake: true, promptId: "p", promptVersion: "fake-1" }
+  meta = {
+    id: "fake",
+    label: "stub",
+    isFake: true,
+    model: null,
+    promptId: "p",
+    promptVersion: "fake-1",
+  }
   constructor(
     private readonly mode: "ok" | ProviderFailure,
     private readonly output: unknown = { tasks: [] },
@@ -71,6 +78,7 @@ const CANDIDATE = (over: Record<string, unknown> = {}) => ({
   description: null,
   deadlineHint: null,
   estimatedMinutes: null,
+  estimatedMinutesSource: null,
   explicitUrgency: null,
   category: null,
   dependencies: [],

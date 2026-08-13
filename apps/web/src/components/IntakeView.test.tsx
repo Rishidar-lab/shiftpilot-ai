@@ -20,6 +20,7 @@ function draft(over: Partial<ExtractionDraft> = {}): ExtractionDraft {
     description: null,
     category: "other",
     estimatedMinutes: 15,
+    estimateSource: "stated",
     deadlineAt: null,
     deadlineSource: "unresolved",
     deadlineHint: null,
@@ -178,6 +179,7 @@ describe("FakeProviderBadge", () => {
   const health = {
     status: "ok" as const,
     version: "0.1.0",
+    promptVersion: "fake-1",
     time: "2026-08-12T08:00:00.000Z",
   }
 
@@ -189,6 +191,7 @@ describe("FakeProviderBadge", () => {
           provider: "fake",
           providerLabel: "Fake heuristic",
           providerIsFake: true,
+          model: null,
         }}
       />,
     )
@@ -198,9 +201,15 @@ describe("FakeProviderBadge", () => {
   it("labels a real provider by name", () => {
     render(
       <FakeProviderBadge
-        health={{ ...health, provider: "claude", providerLabel: "Claude", providerIsFake: false }}
+        health={{
+          ...health,
+          provider: "claude",
+          providerLabel: "Claude",
+          providerIsFake: false,
+          model: "test-model-id",
+        }}
       />,
     )
-    expect(screen.getByText(/Live AI · claude/)).toBeDefined()
+    expect(screen.getByText(/Live AI · test-model-id/)).toBeDefined()
   })
 })
