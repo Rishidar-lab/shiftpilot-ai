@@ -19,7 +19,7 @@
     "db:generate": "pnpm --filter @shiftpilot/api db:generate",
     "db:migrate": "pnpm --filter @shiftpilot/api db:migrate",
     "eval:claude": "pnpm --filter @shiftpilot/api eval:claude",
-    "capture:fixtures": "pnpm --filter @shiftpilot/api capture:fixtures"
+    "smoke:claude": "pnpm --filter @shiftpilot/api smoke:claude"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
