@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 import { ApiClient, ApiError } from "./api/client.js"
 import { FakeProviderBadge } from "./components/FakeProviderBadge.js"
@@ -9,8 +9,28 @@ import type { HealthResponse, Shift } from "@shiftpilot/contracts"
 
 type View = "intake" | "plan" | "handover"
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
+const TABS: Array<{ id: View; label: string }> = [
+  { id: "intake", label: "Intake" },
+  { id: "plan", label: "Plan" },
+  { id: "handover", label: "Handover" },
+]
+
+/** The browser's own zone; the shift is created against the worker's clock. */
+function localZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+}
+
+/** Local wall-clock `hour:00` today, expressed as an instant. */
+function localTimeToday(hour: number): string {
+  const d = new Date()
+  d.setHours(hour, 0, 0, 0)
+  return d.toISOString()
+}
+
+function todayLocalIso(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 export function App() {
@@ -24,11 +44,18 @@ export function App() {
   const [creating, setCreating] = useState(false)
   const [shiftError, setShiftError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const loadHealth = useCallback(() => {
+    setHealthError(null)
     client
       .getHealth()
       .then(setHealth)
-      .catch((err: unknown) => setHealthError(err instanceof ApiError ? err.message : "API down"))
+      .catch((err: unknown) =>
+        setHealthError(err instanceof ApiError ? err.message : "API unreachable"),
+      )
+  }, [client])
+
+  useEffect(() => {
+    loadHealth()
     client
       .listShifts()
       .then((list) => {
@@ -36,24 +63,25 @@ export function App() {
         const first = list[0]
         if (first) setSelectedShiftId(first.id)
       })
-      .catch(() => undefined)
-  }, [client])
+      .catch(() => setShiftError("Could not load shifts."))
+  }, [client, loadHealth])
 
   async function handleCreateShift() {
     setShiftError(null)
     setCreating(true)
     try {
-      const date = todayIso()
       const shift = await client.createShift({
-        date,
-        startAt: `${date}T09:00:00.000Z`,
-        endAt: `${date}T17:00:00.000Z`,
+        date: todayLocalIso(),
+        startAt: localTimeToday(9),
+        endAt: localTimeToday(17),
+        timezone: localZone(),
         role: null,
       })
       setShifts((prev) => [...prev, shift])
       setSelectedShiftId(shift.id)
+      setView("intake")
     } catch (err) {
-      setShiftError(err instanceof ApiError ? err.message : "Failed to create shift")
+      setShiftError(err instanceof ApiError ? err.message : "Could not create the shift")
     } finally {
       setCreating(false)
     }
@@ -74,20 +102,29 @@ export function App() {
       {healthError && (
         <div className="banner error" role="alert">
           <strong>API unavailable.</strong> {healthError}
-          <p className="hint">Start the API with pnpm dev.</p>
+          <p className="hint">Start it with pnpm dev, then retry.</p>
+          <div className="row">
+            <button type="button" onClick={loadHealth}>
+              Try again
+            </button>
+          </div>
         </div>
       )}
 
-      <section className="card">
+      <section className="card" aria-labelledby="shift-heading">
         <div className="row between">
-          <h2>Shift</h2>
-          <button type="button" onClick={handleCreateShift} disabled={creating}>
-            {creating ? "Creating…" : "New shift (today)"}
+          <h2 id="shift-heading">Shift</h2>
+          <button type="button" className="primary" onClick={handleCreateShift} disabled={creating}>
+            {creating ? "Creating…" : "New shift (today, 09:00–17:00)"}
           </button>
         </div>
-        {shiftError && <div className="banner error">{shiftError}</div>}
+        {shiftError && (
+          <div className="banner error" role="alert">
+            {shiftError}
+          </div>
+        )}
         {shifts.length === 0 ? (
-          <p className="hint">No shifts yet. Create today's shift to get started.</p>
+          <p className="empty">No shifts yet. Create today's shift to get started.</p>
         ) : (
           <ul className="shifts">
             {shifts.map((s) => (
@@ -95,11 +132,12 @@ export function App() {
                 <button
                   type="button"
                   className={s.id === selectedShiftId ? "active" : ""}
+                  aria-current={s.id === selectedShiftId}
                   onClick={() => setSelectedShiftId(s.id)}
                 >
                   {s.date}{" "}
                   <span className="muted">
-                    {s.startAt.slice(11, 16)}–{s.endAt.slice(11, 16)}
+                    {formatTime(s.startAt)}–{formatTime(s.endAt)} · {s.timezone}
                   </span>
                 </button>
               </li>
@@ -110,28 +148,18 @@ export function App() {
 
       {selected ? (
         <>
-          <nav className="tabs">
-            <button
-              type="button"
-              className={view === "intake" ? "active" : ""}
-              onClick={() => setView("intake")}
-            >
-              Intake
-            </button>
-            <button
-              type="button"
-              className={view === "plan" ? "active" : ""}
-              onClick={() => setView("plan")}
-            >
-              Plan
-            </button>
-            <button
-              type="button"
-              className={view === "handover" ? "active" : ""}
-              onClick={() => setView("handover")}
-            >
-              Handover
-            </button>
+          <nav className="tabs" aria-label="Shift views">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={view === tab.id ? "active" : ""}
+                aria-current={view === tab.id ? "page" : undefined}
+                onClick={() => setView(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
           </nav>
 
           {view === "intake" && (
@@ -141,12 +169,22 @@ export function App() {
               onApproved={() => setRefreshKey((k) => k + 1)}
             />
           )}
-          {view === "plan" && <PlanView key={refreshKey} client={client} shiftId={selected.id} />}
-          {view === "handover" && <HandoverView client={client} shiftId={selected.id} />}
+          {view === "plan" && (
+            <PlanView key={`plan-${refreshKey}`} client={client} shiftId={selected.id} />
+          )}
+          {view === "handover" && (
+            <HandoverView key={`handover-${refreshKey}`} client={client} shiftId={selected.id} />
+          )}
         </>
       ) : (
-        <p className="hint">Select or create a shift to begin.</p>
+        <p className="empty">Select or create a shift to begin.</p>
       )}
     </main>
   )
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }

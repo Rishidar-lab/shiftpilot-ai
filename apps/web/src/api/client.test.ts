@@ -22,6 +22,8 @@ describe("ApiClient", () => {
           status: "ok",
           version: "0.1.0",
           provider: "fake",
+          providerLabel: "Fake (offline heuristic) — simulated, not a real LLM",
+          providerIsFake: true,
           time: "2026-08-12T00:00:00.000Z",
         }),
       ),
@@ -30,6 +32,7 @@ describe("ApiClient", () => {
     const health = await new ApiClient("http://api.test").getHealth()
     expect(health.status).toBe("ok")
     expect(health.provider).toBe("fake")
+    expect(health.providerIsFake).toBe(true)
   })
 
   it("maps a typed API error envelope to ApiError", async () => {

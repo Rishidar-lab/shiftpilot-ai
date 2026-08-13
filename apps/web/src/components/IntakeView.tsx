@@ -39,6 +39,16 @@ function fromLocalInput(value: string): string | null {
   return d.toISOString()
 }
 
+function editsFor(draft: ExtractionDraft): DraftEdits {
+  return {
+    title: draft.title,
+    category: draft.category ?? "",
+    estimatedMinutes: draft.estimatedMinutes != null ? String(draft.estimatedMinutes) : "",
+    explicitUrgency: draft.explicitUrgency,
+    deadlineAt: toLocalInput(draft.deadlineAt),
+  }
+}
+
 export function IntakeView({
   client,
   shiftId,
@@ -52,21 +62,21 @@ export function IntakeView({
   const [intake, setIntake] = useState<IntakeResult | null>(null)
   const [edits, setEdits] = useState<Record<string, DraftEdits>>({})
   const [actions, setActions] = useState<Record<string, Action>>({})
-  const [submitting, setSubmitting] = useState(false)
+  const [extracting, setExtracting] = useState(false)
+  const [approving, setApproving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<ApprovalResult | null>(null)
 
   async function handleExtract() {
     setError(null)
     setResult(null)
-    setSubmitting(true)
+    setExtracting(true)
     try {
-      const created = await client.createIntake(shiftId, rawText)
-      setIntake(created)
+      setIntake(await client.createIntake(shiftId, rawText))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to extract tasks")
+      setError(err instanceof ApiError ? err.message : "Could not extract tasks")
     } finally {
-      setSubmitting(false)
+      setExtracting(false)
     }
   }
 
@@ -75,13 +85,7 @@ export function IntakeView({
     const draftEdits: Record<string, DraftEdits> = {}
     const draftActions: Record<string, Action> = {}
     for (const draft of intake.report.drafts) {
-      draftEdits[draft.id] = {
-        title: draft.title,
-        category: draft.category ?? "",
-        estimatedMinutes: draft.estimatedMinutes != null ? String(draft.estimatedMinutes) : "",
-        explicitUrgency: draft.explicitUrgency ?? "",
-        deadlineAt: toLocalInput(draft.deadlineAt),
-      }
+      draftEdits[draft.id] = editsFor(draft)
       draftActions[draft.id] = draft.disposition === "rejected" ? "reject" : "approve"
     }
     setEdits(draftEdits)
@@ -91,50 +95,47 @@ export function IntakeView({
   async function handleApprove() {
     if (!intake) return
     setError(null)
-    setSubmitting(true)
+    setApproving(true)
     try {
-      const decisions = intake.report.drafts.map((draft) => {
-        const action = actions[draft.id] ?? "approve"
-        const e = edits[draft.id] ?? {
-          title: draft.title,
-          category: draft.category ?? "",
-          estimatedMinutes: draft.estimatedMinutes != null ? String(draft.estimatedMinutes) : "",
-          explicitUrgency: draft.explicitUrgency ?? "",
-          deadlineAt: toLocalInput(draft.deadlineAt),
-        }
-        if (action === "reject") {
-          return { draftId: draft.id, action: "reject" as const }
-        }
-        return {
-          draftId: draft.id,
-          action: "approve" as const,
-          edits: {
-            title: e.title || draft.title,
-            category: (e.category || draft.category || "other") as Category,
-            estimatedMinutes: e.estimatedMinutes
-              ? Number(e.estimatedMinutes)
-              : draft.estimatedMinutes,
-            explicitUrgency: (e.explicitUrgency || draft.explicitUrgency) as UrgencyLevel,
-            deadlineAt: fromLocalInput(e.deadlineAt) ?? draft.deadlineAt,
-            dependsOn: draft.dependsOn,
-          },
-        }
-      })
-      const approval = await client.approveIntake(intake.rawInput.id, decisions)
-      setResult(approval)
+      const decisions = intake.report.drafts
+        // A draft the pipeline rejected can never become a task; the server
+        // enforces this too, so do not even offer it.
+        .filter((draft) => draft.disposition !== "rejected")
+        .map((draft) => {
+          const action = actions[draft.id] ?? "approve"
+          if (action === "reject") return { draftId: draft.id, action: "reject" as const }
+          const e = edits[draft.id] ?? editsFor(draft)
+          return {
+            draftId: draft.id,
+            action: "approve" as const,
+            edits: {
+              title: e.title || draft.title,
+              category: (e.category || draft.category || "other") as Category,
+              estimatedMinutes: e.estimatedMinutes
+                ? Number(e.estimatedMinutes)
+                : draft.estimatedMinutes,
+              explicitUrgency: (e.explicitUrgency || draft.explicitUrgency) as UrgencyLevel,
+              deadlineAt: fromLocalInput(e.deadlineAt) ?? draft.deadlineAt,
+              dependsOn: draft.dependsOn,
+            },
+          }
+        })
+      setResult(await client.approveIntake(intake.rawInput.id, decisions))
       onApproved()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to approve intake")
+      setError(err instanceof ApiError ? err.message : "Could not approve this intake")
     } finally {
-      setSubmitting(false)
+      setApproving(false)
     }
   }
 
   if (result) {
     return (
-      <section className="card">
-        <h2>Intake approved</h2>
-        <p className="success">{result.createdTasks.length} task(s) created from this intake.</p>
+      <section className="card" aria-labelledby="approved-heading">
+        <h2 id="approved-heading">Intake approved</h2>
+        <p className="success" role="status">
+          {result.createdTasks.length} task(s) created from this intake.
+        </p>
         <ul>
           {result.createdTasks.map((t) => (
             <li key={t.id}>
@@ -142,6 +143,7 @@ export function IntakeView({
             </li>
           ))}
         </ul>
+        <p className="hint">Open the Plan tab to see the re-sequenced shift.</p>
         <button
           type="button"
           onClick={() => {
@@ -157,13 +159,17 @@ export function IntakeView({
   }
 
   return (
-    <section className="card">
-      <h2>Natural-language intake</h2>
-      <p className="hint">
+    <section className="card" aria-labelledby="intake-heading">
+      <h2 id="intake-heading">Natural-language intake</h2>
+      <p className="hint" id="intake-help">
         Type your shift tasks in plain language. Shift Pilot extracts structured tasks for your
         review — nothing becomes a real task until you approve it.
       </p>
+
+      <label htmlFor="intake-text">Your workload, in your own words</label>
       <textarea
+        id="intake-text"
+        aria-describedby="intake-help"
         value={rawText}
         onChange={(e) => setRawText(e.target.value)}
         rows={5}
@@ -171,13 +177,15 @@ export function IntakeView({
           "e.g.\nRestock aisle 3 by 3pm, 15 min\nUrgent: evacuate if alarm\nLunch break at noon"
         }
       />
+
       <div className="row">
         <button
           type="button"
+          className="primary"
           onClick={handleExtract}
-          disabled={submitting || rawText.trim() === ""}
+          disabled={extracting || rawText.trim() === ""}
         >
-          {submitting ? "Extracting…" : "Extract tasks"}
+          {extracting ? "Extracting…" : "Extract tasks"}
         </button>
         {intake && (
           <button type="button" onClick={() => setIntake(null)}>
@@ -185,9 +193,22 @@ export function IntakeView({
           </button>
         )}
       </div>
+
+      {extracting && (
+        <p className="loading" role="status" aria-busy="true">
+          Reading your workload…
+        </p>
+      )}
+
       {error && (
         <div className="banner error" role="alert">
-          {error}
+          <strong>Extraction failed.</strong> {error}
+          <p className="hint">Your text was saved — nothing was lost.</p>
+          <div className="row">
+            <button type="button" onClick={handleExtract} disabled={extracting}>
+              Try again
+            </button>
+          </div>
         </div>
       )}
 
@@ -197,14 +218,11 @@ export function IntakeView({
           edits={edits}
           actions={actions}
           onEdit={(id, patch) =>
-            setEdits((prev) => {
-              const current = prev[id] ?? EMPTY_EDITS
-              return { ...prev, [id]: { ...current, ...patch } }
-            })
+            setEdits((prev) => ({ ...prev, [id]: { ...(prev[id] ?? EMPTY_EDITS), ...patch } }))
           }
           onAction={(id, action) => setActions((prev) => ({ ...prev, [id]: action }))}
           onSubmit={handleApprove}
-          submitting={submitting}
+          submitting={approving}
         />
       )}
     </section>
@@ -229,12 +247,24 @@ function IntakeReview({
   submitting: boolean
 }) {
   const { report } = intake
-  const approvedCount = report.drafts.filter((d) => actions[d.id] !== "reject").length
+  const reviewable = report.drafts.filter((d) => d.disposition !== "rejected")
+  const approvedCount = reviewable.filter((d) => (actions[d.id] ?? "approve") !== "reject").length
+
+  if (report.drafts.length === 0) {
+    return (
+      <div className="review">
+        <p className="empty">
+          No tasks could be read from that text. Try listing one task per line, e.g. “Restock aisle
+          3 by 3pm”.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="review">
       {report.warnings.length > 0 && (
-        <div className="banner warning">
+        <div className="banner warning" role="status">
           {report.warnings.map((w, i) => (
             <div key={i}>{w}</div>
           ))}
@@ -243,7 +273,7 @@ function IntakeReview({
       <div className="row between">
         <h3>Extracted tasks ({report.drafts.length})</h3>
         <span className="muted">
-          provider: {intake.rawInput.provider} · {intake.rawInput.promptVersion}
+          provider: {intake.rawInput.provider} · prompt {intake.rawInput.promptVersion}
         </span>
       </div>
 
@@ -259,9 +289,15 @@ function IntakeReview({
       ))}
 
       <div className="row">
-        <button type="button" onClick={onSubmit} disabled={submitting || approvedCount === 0}>
+        <button
+          type="button"
+          className="primary"
+          onClick={onSubmit}
+          disabled={submitting || approvedCount === 0}
+        >
           {submitting ? "Approving…" : `Approve ${approvedCount} task(s)`}
         </button>
+        {approvedCount === 0 && <span className="muted">Select at least one task to approve.</span>}
       </div>
     </div>
   )
@@ -286,8 +322,9 @@ function DraftCard({
       <div className="row between">
         <span className={`disposition ${draft.disposition}`}>{draft.disposition}</span>
         {!rejected && (
-          <label className="toggle">
+          <label className="toggle" htmlFor={`approve-${draft.id}`}>
             <input
+              id={`approve-${draft.id}`}
               type="checkbox"
               checked={action === "approve"}
               onChange={(e) => onAction(draft.id, e.target.checked ? "approve" : "reject")}
@@ -297,7 +334,9 @@ function DraftCard({
         )}
       </div>
 
+      <label htmlFor={`title-${draft.id}`}>Task title</label>
       <input
+        id={`title-${draft.id}`}
         className="title"
         value={edits.title}
         onChange={(e) => onEdit(draft.id, { title: e.target.value })}
@@ -305,9 +344,10 @@ function DraftCard({
       />
 
       <div className="grid">
-        <label>
+        <label htmlFor={`category-${draft.id}`}>
           Category
           <select
+            id={`category-${draft.id}`}
             value={edits.category}
             onChange={(e) => onEdit(draft.id, { category: e.target.value })}
             disabled={rejected}
@@ -320,14 +360,14 @@ function DraftCard({
             ))}
           </select>
         </label>
-        <label>
+        <label htmlFor={`urgency-${draft.id}`}>
           Urgency
           <select
+            id={`urgency-${draft.id}`}
             value={edits.explicitUrgency}
             onChange={(e) => onEdit(draft.id, { explicitUrgency: e.target.value })}
             disabled={rejected}
           >
-            <option value="">(none)</option>
             {UrgencyLevel.options.map((u) => (
               <option key={u} value={u}>
                 {u}
@@ -335,9 +375,10 @@ function DraftCard({
             ))}
           </select>
         </label>
-        <label>
+        <label htmlFor={`minutes-${draft.id}`}>
           Duration (min)
           <input
+            id={`minutes-${draft.id}`}
             type="number"
             min={1}
             max={480}
@@ -346,9 +387,10 @@ function DraftCard({
             disabled={rejected}
           />
         </label>
-        <label>
+        <label htmlFor={`deadline-${draft.id}`}>
           Deadline
           <input
+            id={`deadline-${draft.id}`}
             type="datetime-local"
             value={edits.deadlineAt}
             onChange={(e) => onEdit(draft.id, { deadlineAt: e.target.value })}
@@ -357,6 +399,12 @@ function DraftCard({
         </label>
       </div>
 
+      {draft.deadlineHint && (
+        <p className="muted">
+          Deadline read from “{draft.deadlineHint}”
+          {draft.deadlineSource === "unresolved" && " — not understood, please set it yourself"}
+        </p>
+      )}
       {draft.dependsOn.length > 0 && (
         <p className="muted">Depends on: {draft.dependsOn.join(", ")}</p>
       )}
@@ -367,7 +415,11 @@ function DraftCard({
           ))}
         </ul>
       )}
-      {rejected && <p className="muted">This candidate was rejected and will not become a task.</p>}
+      {rejected && (
+        <p className="muted">
+          Rejected by validation ({draft.rejectionReason ?? "policy"}) — it will not become a task.
+        </p>
+      )}
     </article>
   )
 }

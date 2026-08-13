@@ -1,20 +1,33 @@
 :root {
-  color-scheme: light dark;
+  /* The palette below is a single, deliberate dark theme. Declaring
+     "light dark" made the browser render form controls in light mode against
+     these dark surfaces, so the scheme is pinned to match what we actually
+     paint. */
+  color-scheme: dark;
   font-family: system-ui, sans-serif;
   line-height: 1.5;
+  --focus: #818cf8;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
   background: #101014;
   color: #f4f4f7;
 }
 
 .shell {
-  width: min(640px, 90vw);
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+  box-sizing: border-box;
+}
+
+/* Keyboard users must always be able to see where they are. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 h1 {
@@ -303,4 +316,114 @@ textarea {
 .bucket.medium {
   background: #1e3a8a;
   color: #bfdbfe;
+}
+.bucket.low {
+  background: #1f2937;
+  color: #d1d5db;
+}
+
+.plan-item.blocked {
+  border-left: 4px solid #f87171;
+}
+.plan-item.waiting {
+  border-left: 4px solid #fbbf24;
+}
+.plan-item.cycle {
+  border-left: 4px solid #c084fc;
+}
+.plan-item.ready {
+  border-left: 4px solid #16a34a;
+}
+
+/* The one action a screen is built around gets visual weight. */
+button.primary {
+  border-color: #4f46e5;
+  background: #4338ca;
+  font-weight: 600;
+}
+button.primary:hover:not(:disabled) {
+  background: #4f46e5;
+}
+
+.row.actions {
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.row.actions button {
+  font-size: 0.85rem;
+  padding: 0.3rem 0.7rem;
+}
+
+.block-form {
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.block-form label {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+.block-form input {
+  flex: 1 1 12rem;
+  background: #0f0f14;
+  color: #f4f4f7;
+  border: 1px solid #2b2b33;
+  border-radius: 6px;
+  padding: 0.35rem;
+  font: inherit;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin-top: 0.75rem;
+}
+label.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  color: #f4f4f7;
+}
+
+.empty {
+  color: #9ca3af;
+  border: 1px dashed #2b2b33;
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 0.75rem 0 0;
+}
+
+.loading {
+  color: #9ca3af;
+  margin: 0.75rem 0 0;
+}
+
+.badge.real {
+  border: 1px solid #1e3a8a;
+  background: #0f1830;
+  color: #bfdbfe;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* Frontline workers are on phones: one column, larger touch targets. */
+@media (max-width: 560px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .topbar {
+    flex-direction: column;
+  }
+  .row.between {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .tabs button,
+  .row.actions button {
+    flex: 1 1 auto;
+    min-height: 44px;
+  }
 }

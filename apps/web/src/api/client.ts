@@ -9,7 +9,12 @@ import {
   Task,
   WorkPlan,
 } from "@shiftpilot/contracts"
-import type { ApiErrorCode, IntakeApprovalDecision } from "@shiftpilot/contracts"
+import type {
+  ApiErrorCode,
+  CreateShiftRequest,
+  IntakeApprovalDecision,
+  UpdateTaskRequest,
+} from "@shiftpilot/contracts"
 
 /** Shape returned by capture/retrieve intake endpoints. */
 export interface IntakeResult {
@@ -92,12 +97,7 @@ export class ApiClient {
     return this.request("GET", "/health", HealthResponse.parse)
   }
 
-  createShift(dto: {
-    date: string
-    startAt: string
-    endAt: string
-    role?: string | null
-  }): Promise<Shift> {
+  createShift(dto: CreateShiftRequest): Promise<Shift> {
     return this.request("POST", "/shifts", Shift.parse, dto)
   }
 
@@ -111,6 +111,14 @@ export class ApiClient {
 
   listTasks(shiftId: string): Promise<Task[]> {
     return this.request("GET", `/shifts/${shiftId}/tasks`, Task.array().parse)
+  }
+
+  updateTask(id: string, patch: UpdateTaskRequest): Promise<Task> {
+    return this.request("PATCH", `/tasks/${id}`, Task.parse, patch)
+  }
+
+  blockTask(id: string, reason: string): Promise<Task> {
+    return this.request("POST", `/tasks/${id}/block`, Task.parse, { reason })
   }
 
   createIntake(shiftId: string, rawText: string): Promise<IntakeResult> {
