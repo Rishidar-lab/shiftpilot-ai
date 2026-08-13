@@ -1,6 +1,12 @@
 import type { FastifyInstance } from "fastify"
 
-import { blockTaskById, createTask, getTaskById, updateTaskById } from "../use-cases/task.js"
+import {
+  blockTaskById,
+  createTask,
+  getTaskById,
+  listTasks,
+  updateTaskById,
+} from "../use-cases/task.js"
 import type { Database } from "../db/index.js"
 import {
   BlockTaskRequest,
@@ -14,6 +20,11 @@ export function registerTasks(app: FastifyInstance, db: Database): void {
     const { shiftId } = request.params as { shiftId: string }
     const dto = CreateTaskRequest.parse(request.body)
     return createTask(db, shiftId, dto)
+  })
+
+  app.get("/shifts/:shiftId/tasks", async (request): Promise<Task[]> => {
+    const { shiftId } = request.params as { shiftId: string }
+    return listTasks(db, shiftId)
   })
 
   app.get("/tasks/:id", async (request): Promise<Task> => {

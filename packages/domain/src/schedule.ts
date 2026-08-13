@@ -70,7 +70,7 @@ export function planShift({ shift, tasks, now }: PlanInput): WorkPlan {
 
   const context = { now, shiftEnded, cursor: () => cursor, shift, graph, cycleIds }
   for (const entry of picked) {
-    const scheduled = scheduleEntry(entry, context)
+    const scheduled = { ...scheduleEntry(entry, context), position: sequence.length }
     sequence.push(scheduled)
     if (scheduled.fits && scheduled.endAt !== null) {
       cursor = Math.max(cursor, new Date(scheduled.endAt).getTime())
@@ -79,7 +79,7 @@ export function planShift({ shift, tasks, now }: PlanInput): WorkPlan {
   }
 
   for (const entry of leftRanked) {
-    const scheduled = scheduleEntry(entry, context)
+    const scheduled = { ...scheduleEntry(entry, context), position: sequence.length }
     sequence.push(scheduled)
     collect(scheduled, missingDurationIds, cannotFitIds)
   }
