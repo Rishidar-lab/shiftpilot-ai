@@ -49,7 +49,7 @@ export function buildApp({ config, db, provider }: AppDeps): FastifyInstance {
       registerHealth(scoped, provider)
       registerShifts(scoped, db)
       registerTasks(scoped, db)
-      registerPlan(scoped, db)
+      registerPlan(scoped, db, provider, config, aiRateLimiter)
       registerIntake(scoped, db, provider, config, aiRateLimiter)
     },
     { prefix: "/api" },

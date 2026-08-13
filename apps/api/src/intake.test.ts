@@ -25,6 +25,8 @@ class StubProvider implements AiProvider {
     model: null,
     promptId: "p",
     promptVersion: "fake-1",
+    handoverPromptId: "h",
+    handoverPromptVersion: "fake-1",
   }
   constructor(
     private readonly mode: "ok" | ProviderFailure,

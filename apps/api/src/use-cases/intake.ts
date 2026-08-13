@@ -27,6 +27,7 @@ import type {
   Task,
 } from "@shiftpilot/contracts"
 import { ConflictError, NotFoundError, ProviderError, ValidationError } from "./errors.js"
+import { failureMessage, isProviderFailure, withTimeout } from "./with-timeout.js"
 
 export interface IntakeResult {
   rawInput: RawInput
@@ -49,36 +50,6 @@ function toShiftContext(shift: Shift): ShiftContext {
   }
 }
 
-function isProviderFailure(value: unknown): value is ProviderFailure {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "kind" in value &&
-    typeof (value as ProviderFailure).kind === "string"
-  )
-}
-
-function failureMessage(failure: ProviderFailure): string {
-  switch (failure.kind) {
-    case "timeout":
-      return "The AI provider did not respond in time."
-    case "rate_limited":
-      return `The AI provider was rate limited${failure.retryAfterMs ? ` (retry after ${failure.retryAfterMs}ms)` : ""}.`
-    case "quota":
-      return "The AI provider quota was exceeded."
-    case "network":
-      return `AI provider network error: ${failure.message}`
-    case "invalid_response":
-      return `The AI provider returned an invalid response: ${failure.detail}`
-    case "budget_exceeded":
-      return "The AI provider budget was exceeded."
-    case "unauthorized":
-      return "The AI provider rejected the server's credentials."
-    case "misconfigured":
-      return `The AI provider could not process the request: ${failure.detail}`
-  }
-}
-
 function mapFailure(failure: ProviderFailure): ProviderError {
   switch (failure.kind) {
     case "invalid_response":
@@ -98,31 +69,6 @@ function mapFailure(failure: ProviderFailure): ProviderError {
       )
     default:
       return new ProviderError("ai_unavailable", failure.kind, failureMessage(failure))
-  }
-}
-
-/**
- * Bound the provider call in wall-clock time AND actually abort it. Rejecting
- * without aborting leaves the HTTP request running and still spending quota
- * after we have stopped caring about the answer (audit A-18).
- */
-async function withTimeout<T>(
-  run: (signal: AbortSignal) => Promise<T>,
-  ms: number,
-  onTimeout: () => ProviderFailure,
-): Promise<T> {
-  const controller = new AbortController()
-  let timer: NodeJS.Timeout | undefined
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      controller.abort()
-      reject(onTimeout())
-    }, ms)
-  })
-  try {
-    return await Promise.race([run(controller.signal), timeout])
-  } finally {
-    if (timer) clearTimeout(timer)
   }
 }
 
