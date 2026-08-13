@@ -1,9 +1,30 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
-import { buildHandoverFacts } from "./handover.js"
+import { buildHandoverFacts, normalizeHandoverNarrative } from "./handover.js"
 import { NOW, makeShift, makeTask, resetIds } from "./test-helpers.js"
 
 beforeEach(() => resetIds())
+
+/** A facts snapshot with one completed and one overdue task to reference. */
+function factsWithTwoTasks() {
+  return buildHandoverFacts({
+    shift: makeShift(),
+    tasks: [
+      makeTask({ id: "done-1", status: "completed", completedAt: "2026-08-12T07:00:00.000Z" }),
+      makeTask({ id: "late-1", deadlineAt: "2026-08-12T07:00:00.000Z" }),
+    ],
+    now: NOW,
+  })
+}
+
+function narrative(over: Record<string, unknown> = {}) {
+  return {
+    headline: "Steady shift",
+    summary: "Most of the list cleared; one item is running late.",
+    attention: [{ taskId: "late-1", why: "Past its deadline." }],
+    ...over,
+  }
+}
 
 describe("buildHandoverFacts", () => {
   it("counts statuses and lists completed work with timestamps", () => {
@@ -90,5 +111,79 @@ describe("buildHandoverFacts", () => {
         buildHandoverFacts({ shift: makeShift(), tasks: [...tasks].reverse(), now: NOW }),
       ),
     )
+  })
+})
+
+describe("normalizeHandoverNarrative", () => {
+  it("accepts prose that only references tasks present in the facts", () => {
+    const outcome = normalizeHandoverNarrative(narrative(), factsWithTwoTasks())
+    expect(outcome.ok).toBe(true)
+    if (outcome.ok) expect(outcome.narrative.attention[0]!.taskId).toBe("late-1")
+  })
+
+  it("rejects the whole narrative when it references an unknown task", () => {
+    const outcome = normalizeHandoverNarrative(
+      narrative({ attention: [{ taskId: "task-that-never-existed", why: "Invented." }] }),
+      factsWithTwoTasks(),
+    )
+    expect(outcome).toMatchObject({ ok: false, reason: "unknown_task_reference" })
+  })
+
+  it("rejects a narrative that mixes one real and one invented reference", () => {
+    // Partial credit would let a hallucinated id through by pairing it with a
+    // real one. One bad reference discredits the whole draft.
+    const outcome = normalizeHandoverNarrative(
+      narrative({
+        attention: [
+          { taskId: "late-1", why: "Past its deadline." },
+          { taskId: "ghost", why: "Does not exist." },
+        ],
+      }),
+      factsWithTwoTasks(),
+    )
+    expect(outcome).toMatchObject({ ok: false, reason: "unknown_task_reference" })
+  })
+
+  it("rejects extra fields, so a model cannot smuggle in its own numbers", () => {
+    const outcome = normalizeHandoverNarrative(
+      narrative({ completedCount: 12, generatedAt: "2026-01-01T00:00:00.000Z" }),
+      factsWithTwoTasks(),
+    )
+    expect(outcome).toMatchObject({ ok: false, reason: "invalid_narrative" })
+  })
+
+  it("rejects oversized prose rather than truncating it", () => {
+    const outcome = normalizeHandoverNarrative(
+      narrative({ summary: "x".repeat(1201) }),
+      factsWithTwoTasks(),
+    )
+    expect(outcome).toMatchObject({ ok: false, reason: "invalid_narrative" })
+  })
+
+  it("rejects more than five attention items", () => {
+    const facts = factsWithTwoTasks()
+    const outcome = normalizeHandoverNarrative(
+      narrative({
+        attention: Array.from({ length: 6 }, () => ({ taskId: "late-1", why: "Late." })),
+      }),
+      facts,
+    )
+    expect(outcome).toMatchObject({ ok: false, reason: "invalid_narrative" })
+  })
+
+  it.each([null, undefined, "a string", 42, [], { headline: "only" }])(
+    "rejects malformed payload %s",
+    (payload) => {
+      const outcome = normalizeHandoverNarrative(payload, factsWithTwoTasks())
+      expect(outcome).toMatchObject({ ok: false, reason: "invalid_narrative" })
+    },
+  )
+
+  it("never mutates the facts it validates against", () => {
+    const facts = factsWithTwoTasks()
+    const before = JSON.stringify(facts)
+    normalizeHandoverNarrative(narrative(), facts)
+    normalizeHandoverNarrative(narrative({ attention: [{ taskId: "ghost", why: "x" }] }), facts)
+    expect(JSON.stringify(facts)).toBe(before)
   })
 })

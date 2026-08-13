@@ -274,6 +274,66 @@ export const HandoverFacts = z
   .strict()
 export type HandoverFacts = z.infer<typeof HandoverFacts>
 
+/**
+ * AI-drafted prose ABOUT a HandoverFacts snapshot.
+ *
+ * The shape is the safety mechanism. The model gets to phrase the shift's story
+ * and nothing else: it emits no counts, no timestamps, no deadlines and no task
+ * names — `attention` may only carry task IDs, and the pipeline rejects the
+ * whole narrative if any ID is absent from the facts it was given. So the model
+ * cannot introduce a task, a person, a deadline, a completion state or a number
+ * that deterministic domain code did not already compute. Titles shown next to
+ * an `attention` entry are looked up from the facts at render time, never taken
+ * from the model.
+ */
+export const HandoverNarrative = z
+  .object({
+    /** One-line framing of the shift, e.g. "Steady shift, two items carried over". */
+    headline: z.string().min(1).max(160),
+    /** Short prose summary. Size-bounded so a runaway response cannot fill a page. */
+    summary: z.string().min(1).max(1200),
+    /** Task IDs worth flagging to the next worker; every ID must exist in the facts. */
+    attention: z
+      .array(z.object({ taskId: z.string().min(1), why: z.string().min(1).max(240) }).strict())
+      .max(5),
+  })
+  .strict()
+export type HandoverNarrative = z.infer<typeof HandoverNarrative>
+
+/**
+ * Why prose is missing. Never silent: the UI renders this as an explicit,
+ * labelled degraded state alongside the facts, which are always present.
+ */
+export const HandoverDegradedReason = z.enum([
+  /** The provider call failed (outage, timeout, rate limit, credentials, quota). */
+  "provider_failure",
+  /** The response did not satisfy the narrative contract. */
+  "invalid_narrative",
+  /** The model referenced a task that does not exist in this shift's facts. */
+  "unknown_task_reference",
+])
+export type HandoverDegradedReason = z.infer<typeof HandoverDegradedReason>
+
+/**
+ * The handover endpoint's response. `facts` is ALWAYS populated by deterministic
+ * domain code; `narrative` is best-effort. Exactly one of `narrative`/`degraded`
+ * is non-null, so a failed draft can never render as an invisible empty success.
+ */
+export const HandoverResponse = z
+  .object({
+    facts: HandoverFacts,
+    narrative: HandoverNarrative.nullable(),
+    degraded: z
+      .object({ reason: HandoverDegradedReason, detail: z.string().max(300) })
+      .strict()
+      .nullable(),
+    /** Server-declared provenance of the narrative attempt. */
+    provider: z.string(),
+    promptVersion: z.string(),
+  })
+  .strict()
+export type HandoverResponse = z.infer<typeof HandoverResponse>
+
 // ---------------------------------------------------------------------------
 // Request DTOs (validated at the API boundary)
 // ---------------------------------------------------------------------------

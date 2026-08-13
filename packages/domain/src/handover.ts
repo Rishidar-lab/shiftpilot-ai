@@ -1,4 +1,11 @@
-import type { HandoverFacts, Shift, Task } from "@shiftpilot/contracts"
+import type {
+  HandoverDegradedReason,
+  HandoverFacts,
+  HandoverNarrative as HandoverNarrativeType,
+  Shift,
+  Task,
+} from "@shiftpilot/contracts"
+import { HandoverNarrative } from "@shiftpilot/contracts"
 
 import { minutesUntil } from "./next.js"
 import { planShift } from "./schedule.js"
@@ -97,6 +104,71 @@ export function buildHandoverFacts({ shift, tasks, now }: HandoverInput): Handov
     warnings: plan.warnings,
     recommendations,
   }
+}
+
+export type HandoverNarrativeOutcome =
+  | { ok: true; narrative: HandoverNarrativeType }
+  | { ok: false; reason: HandoverDegradedReason; detail: string }
+
+/**
+ * Validate untrusted handover prose against the facts it was supposed to describe.
+ *
+ * This is the trust boundary for AI-written narrative, and it is deliberately
+ * unforgiving. Two checks:
+ *
+ *  1. The response must satisfy the `HandoverNarrative` contract — bounded
+ *     strings, no extra fields, at most five attention entries.
+ *  2. Every referenced `taskId` must already appear in this shift's facts. A
+ *     single unknown id fails the WHOLE narrative rather than being quietly
+ *     dropped: an id the model did not get from the facts means it produced
+ *     something it could not have known, and the rest of that prose has not
+ *     earned trust either. The caller then renders the deterministic facts in a
+ *     labelled degraded state, which is always a safe answer.
+ *
+ * Note what this function cannot do: it cannot prove a sentence is true. That is
+ * why the narrative is additive — the facts are rendered independently and are
+ * always authoritative — and why the prompt gives the model nowhere to put a
+ * number or a task name in the first place.
+ */
+export function normalizeHandoverNarrative(
+  raw: unknown,
+  facts: HandoverFacts,
+): HandoverNarrativeOutcome {
+  const parsed = HandoverNarrative.safeParse(raw)
+  if (!parsed.success) {
+    const first = parsed.error.issues[0]
+    return {
+      ok: false,
+      reason: "invalid_narrative",
+      detail: first
+        ? `${first.path.join(".") || "response"}: ${first.message}`
+        : "malformed response",
+    }
+  }
+
+  const known = knownTaskIds(facts)
+  const unknown = parsed.data.attention.filter((item) => !known.has(item.taskId))
+  if (unknown.length > 0) {
+    return {
+      ok: false,
+      reason: "unknown_task_reference",
+      detail: `referenced ${unknown.length} task id(s) absent from this shift's facts`,
+    }
+  }
+
+  return { ok: true, narrative: parsed.data }
+}
+
+/** Every task id the facts actually mention — the model's entire allowed vocabulary. */
+function knownTaskIds(facts: HandoverFacts): Set<string> {
+  return new Set([
+    ...facts.completed.map((t) => t.taskId),
+    ...facts.pending.map((t) => t.taskId),
+    ...facts.blocked.map((t) => t.taskId),
+    ...facts.overdue.map((t) => t.taskId),
+    ...facts.upcomingDeadlines.map((t) => t.taskId),
+    ...facts.recommendations.map((t) => t.taskId),
+  ])
 }
 
 function blockedByTitles(task: Task, tasks: readonly Task[]): string[] {
