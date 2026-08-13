@@ -1,6 +1,6 @@
 # SHIFT PILOT — Architecture
 
-Status: M2 implemented (AI intake + review) · Last updated: 2026-08-12
+Status: M2 implemented (AI intake + review) + Phase-B audit remediation · Last updated: 2026-08-13
 Companion docs: `../CLAUDE.md` (rules), `./implementation-plan.md` (tasks).
 
 ---
@@ -124,7 +124,8 @@ All shapes live in `packages/contracts` as zod schemas (the single source of tru
 mirrors them into snake_case SQLite columns (`apps/api/src/db/schema.ts`).
 
 ```
-Shift      id · date(ISO date) · startAt(ISO) · endAt(ISO) · role · createdAt(ISO)
+Shift      id · date(ISO date) · startAt(ISO) · endAt(ISO) · timezone(IANA) · role
+           createdAt(ISO)
 Task       id · shiftId · title · category(enum) · estimatedMinutes(1–480|null)
            deadlineAt?(ISO) · deadlineSource(manual|parsed|unresolved)
            explicitUrgency(none|low|medium|high|critical)
@@ -140,6 +141,27 @@ review state keyed by `raw_input_id + draft_id`). Persisted `Handover` rows are 
 The schedule, sequence, next-decision, and handover **facts are derived projections** —
 computed on demand by domain engines, never persisted. This eliminates stale-plan bugs by
 construction: the plan shown is always a pure function of current task state plus "now".
+
+### Time semantics (shift-local, explicit)
+
+A shift is a **local-time** concept. "Before close" and "by 2pm" mean 2pm where the worker
+stands — not 2pm UTC, and not 2pm in whatever zone the server happens to run in. Each shift
+therefore stores an IANA `timezone` (defaulting to the server's zone at creation time), and
+`packages/domain/src/time.ts` is the **only** module that converts a human phrase into an
+instant:
+
+| Phrase                                    | Resolves to                                        |
+| ----------------------------------------- | -------------------------------------------------- |
+| `eod`, `end of shift/day`, `before close` | the shift's `endAt`                                |
+| `2pm`, `2:30 pm`, `14:00`                 | that wall clock on the shift date, in its zone     |
+| `noon`, `morning`, `afternoon`, `evening` | 12:00 / 09:00 / 15:00 / 18:00 local                |
+| `in 30m`, `in 2 hours`                    | measured from `now`                                |
+| `tomorrow 9am`                            | 09:00 local on the following date                  |
+| anything else                             | **unresolved** — flagged for review, never guessed |
+
+DST is handled by measuring the zone's offset at the candidate instant and correcting once,
+so 14:00 London is 13:00Z in August and 14:00Z in January. Providers never do this
+arithmetic: they return the phrase, the domain owns the calendar.
 
 ### Task lifecycle (explicit state machine, enforced in domain)
 
@@ -175,7 +197,8 @@ categorised user signal rather than an opaque ±50 knob.
 | Quick task         | +3        | estimate ≤15m                                                                                 |
 | Continuity (next)  | +15       | already `in_progress` — keep the worker productive                                            |
 
-Bucket: **≥55 critical · ≥35 high · ≥20 medium · else low**. The reason breakdown is returned
+Bucket: **≥55 critical · ≥35 high · ≥15 medium · else low** (`PRIORITY.bucket*` in
+`packages/domain/src/constants.ts` is authoritative). The reason breakdown is returned
 with every ranked task and rendered as human text (`"overdue by 1h05m · customer-facing · unblocks 2 tasks"`).
 
 ### Sequence engine
@@ -215,16 +238,22 @@ domain projections recomputed per request; `?now=<ISO>` overrides the clock for 
 replay/tests. Errors use the unified envelope `{ error: { code, message, details? } }`.
 
 - `POST /api/shifts` · `GET /api/shifts` · `GET /api/shifts/:id`
-- `POST /api/shifts/:shiftId/tasks` · `GET /api/tasks/:id`
+- `POST /api/shifts/:shiftId/tasks` · `GET /api/shifts/:shiftId/tasks` · `GET /api/tasks/:id`
 - `PATCH /api/tasks/:id` (state-machine transition + field edits, validated by `checkTransition`)
 - `POST /api/tasks/:id/block` (reason required)
 - `GET /api/shifts/:id/plan` (full `WorkPlan`) · `GET /api/shifts/:id/next` (`NextDecision`) ·
   `GET /api/shifts/:id/handover` (`HandoverFacts`)
 
-Persistence: SQLite + Drizzle (`better-sqlite3`, WAL), tables `shifts` / `tasks` /
-`task_dependencies` (PK `task_id+depends_on_id`, self-loop `CHECK`, FK cascade), migrations
-applied at boot via `drizzle-kit`. The natural-language capture → extraction → validation
-pipeline and persisted handovers land in M2/M3.
+Intake routes (M2): `POST /api/shifts/:shiftId/intake` (rate-limited + size-capped) ·
+`GET /api/intake/:id` · `POST /api/intake/:id/approve`.
+
+Persistence: SQLite + Drizzle (`better-sqlite3`, WAL, `foreign_keys=ON`), tables `shifts` /
+`tasks` / `task_dependencies` (PK `task_id+depends_on_id`, self-loop `CHECK`) / `raw_inputs`
+(FK → `shifts`) / `extraction_drafts` (PK `raw_input_id+draft_id`, FK → `raw_inputs`),
+migrations applied at boot and via `pnpm db:migrate`. Note: `tasks.shift_id` and
+`task_dependencies` carry **no** SQL foreign key — same-shift and existence constraints on
+dependency edges are enforced in the use-case layer (`checkDependencies`), which is what
+returns a typed 422 instead of a raw constraint error. Persisted handovers land in M3.
 
 ## 5. AI provider boundaries
 
@@ -239,32 +268,45 @@ mutates state. Every operational decision happens later in the deterministic pip
 type ProviderFailure =
   | { kind: "timeout" }
   | { kind: "rate_limited"; retryAfterMs?: number }
+  | { kind: "quota" }
   | { kind: "network"; message: string }
   | { kind: "invalid_response"; detail: string }
   | { kind: "budget_exceeded" }
 
+interface AiProviderMeta {
+  id: string
+  label: string
+  isFake: boolean // declared by the implementation, never inferred from `id`
+  promptId: string
+  promptVersion: string
+}
+
 interface AiProvider {
-  extractTasks(
-    input: string,
-    ctx: ShiftContext,
-  ): Promise<{ ok: true; raw: unknown } | { ok: false; failure: ProviderFailure }>
-  meta(): AiProviderMeta // { id, label, isFake, promptVersion }
+  readonly meta: AiProviderMeta // a property, not a method
+  extractTasks(input: string, ctx: ShiftContext, signal?: AbortSignal): Promise<ExtractionAttempt>
+  generateHandover(facts: HandoverFacts, signal?: AbortSignal): Promise<HandoverAttempt>
 }
 ```
 
+`signal` exists so the API's timeout can **abort** an in-flight request instead of merely
+giving up on it — an unaborted call keeps spending quota after we stop caring.
+
 One implementation today:
 
-- **`FakeAiProvider`** — deterministic regex/heuristic extractor using the same deadline
-  vocabulary and category keywords as the domain normalizer. `isFake: true`, `label`
-  is the honest string `"Fake (offline heuristic) — simulated, not a real LLM"`, and
-  `promptVersion` is recorded (`"fake-1"`) so every extraction is traceable to the exact
-  heuristic. It supports `forcedFailure` injection for testing the failure path. It is a
-  full implementation, not a stub: dev/demo/tests exercise the real extraction + review
-  pipeline end-to-end offline.
+- **`FakeAiProvider`** — deterministic regex/heuristic extractor (line splitting, category
+  and urgency keywords, duration parsing, `#n` + free-text dependency references). It
+  reports deadline **phrases verbatim** (`deadlineHint: "by 3pm"`) and deliberately performs
+  no date arithmetic: resolving a phrase to an instant is domain policy
+  (`packages/domain/src/time.ts`), so this provider and a future Claude provider cannot
+  disagree about what the same words mean. `isFake: true`, `label` is the honest string
+  `"Fake (offline heuristic) — simulated, not a real LLM"`, and `promptVersion` is recorded
+  (`"fake-1"`) so every extraction is traceable to the exact heuristic. It supports
+  `forcedFailure` injection for testing the failure path. It is a full implementation, not a
+  stub: dev/demo/tests exercise the real extraction + review pipeline end-to-end offline.
 
-The `claude` provider is **not** implemented. The env still accepts `AI_PROVIDER=fake|claude`
-via zod-validated env (`apps/api/src/config.ts`), but selecting `claude` is a **boot-time
-error** with a clear message (`claude provider not implemented — set AI_PROVIDER=fake`).
+The `claude` provider is **not** implemented (it lands in M3). The env still accepts
+`AI_PROVIDER=fake|claude` via zod-validated env (`apps/api/src/config.ts`), but selecting
+`claude` is a **boot-time error** with a clear message.
 This keeps the contract surface honest: there is no code path that silently pretends to be
 Claude. The `AiProvider` interface and `ShiftContext` are structured so a real provider can
 be dropped in later without touching the domain, the API, or the UI.
@@ -298,36 +340,46 @@ on provider. AI output is treated as **untrusted input** — identical posture t
 network payload.
 
 ```
- raw provider JSON (untrusted)
-   │ 1. parseJsonStrict      — must be syntactically valid JSON; no auto-repair
+ raw provider output (untrusted, `unknown`)
+   │ 1. envelope read        — { tasks: [...] } | bare array | object with .tasks;
+   │                           anything else → report-level warning + zero drafts
    ▼
- zod schema (contracts)     — per task: unknown keys → per-task rejection (skipped, not fatal)
-   │ 2. full-shape failure (not even a list) → immediate failure; raw text retained
+ zod ExtractionCandidate    — PASS 1 over every item; unknown keys or bad types →
+   │  (contracts, .strict)     per-item rejection (malformed_provider_output), never fatal
    ▼
- domain policy (pure)       — title non-empty ≤120; estimate 5–480; ≤25 tasks; non-empty
-   │                         result; duplicate detection (normalized-title similarity)
+ domain policy (pure)       — PASS 2: title non-empty ≤120; estimate 1–480; duplicate
+   │                           detection against batch + existing non-cancelled titles
    ▼
- normalization (pure)       — resolve deadline hint against ShiftContext via vocabulary
-   │                         ("before close"→shift end, "2pm"→shift date 14:00, "in 30m",
-   │                         "EOD", weekday names…); category default; estimate defaults
-   │                         per category; dependency refs resolved to draft ids, then
-   │                         (at approval) to accepted task ids
+ deadline normalization     — resolve the verbatim `deadlineHint` against the shift's DATE
+   │  (time.ts, shift-local)   and IANA TIMEZONE: "before close"→shift end, "2pm"→14:00
+   │                           local, "in 30m"→now+30m, "tomorrow 9am". Unrecognised →
+   │                           unresolved + review flag; never guessed
    ▼
- dedupe + dependency resolve — batch + existing-title dedup; ambiguous/unresolved refs flagged
+ dependency resolve         — over the FULL batch, so forward and backward references both
+   │                           resolve; ambiguous/unresolved refs flagged for review
    ▼
- ExtractionReport           — { status:"ok"|"failed", drafts:[ExtractionDraft], report }
+ contract guard             — each draft is re-parsed through ExtractionDraft before it can
+   │                           be persisted; anything unrepresentable is downgraded to a
+   │                           rejected draft rather than escaping the pipeline
    ▼
- persist drafts + report    — raw_inputs row already persisted BEFORE the AI call (durability)
+ ExtractionReport           — { rawInputId, provider, promptVersion, generatedAt,
+   │                           drafts: ExtractionDraft[], warnings: string[] }
    ▼
- HUMAN REVIEW               — the API returns ReviewableDraft[] (disposition accepted|
-                              needsReview|rejected + reasons); only explicit approval creates
-                              M1 Tasks. The AI never writes a Task.
+ persist drafts + status    — ONE transaction; the raw_inputs row was already persisted
+   ▼                           BEFORE the AI call (durability first)
+ HUMAN REVIEW               — the API returns drafts with disposition accepted|needsReview|
+                              rejected, a typed `rejectionReason`, and human-readable
+                              `reasons`. Approval REFUSES rejected drafts. The AI never
+                              writes a Task.
 ```
 
-`ExtractionReport` is UI-visible: `totalFound`, `accepted` (auto-accepted by policy),
-`skipped: [{ key, reason }]` (reasons: invalid_title, unknown_extra_fields, duplicate,
-past_deadline_hint, bad_reference, size_exceeded), `warnings` (e.g. unresolved dependencies),
-`rejections: [{ draftId, reason }]`, `failedDraftIds`, `provider:{id,label,isFake,promptVersion}`.
+`ExtractionReport` is UI-visible and its exact shape lives in `packages/contracts`:
+`{ rawInputId, provider, promptVersion, generatedAt, drafts, warnings }`. Per-draft state is
+carried on each `ExtractionDraft`: `disposition` (accepted | needsReview | rejected), a typed
+`rejectionReason` from `ExtractionRejectionReason` (`missing_title`, `duplicate_candidate`,
+`invalid_duration`, `invalid_deadline`, `deadline_before_shift`, `ambiguous_dependency`,
+`unresolved_reference`, `oversized_input`, `malformed_provider_output`), the verbatim
+`deadlineHint`, and human-readable `reasons`.
 Partial success is a first-class result — the worker approves what survived; the UI shows
 every draft, editable, with accept/reject toggles. "3 of 5 extracted, 2 skipped: unknown
 extra field 'owner:'" is honest, not hidden.
@@ -370,19 +422,22 @@ ai_invalid_response · ai_budget_exceeded · internal`.
 
 Vitest across workspaces. **All tests run offline** — no network, no keys, no paid APIs.
 
-| Layer                                                                    | Approach                                                                                                                                                                                                                         | Requirements          |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| Domain (priority, sequence, schedule, state machine, normalizer, policy) | pure unit tests, table-driven; adversarial cases (cycles, overdue, empty, overflow)                                                                                                                                              | ≥90% line coverage    |
-| Validation pipeline                                                      | `packages/domain/src/extraction.test.ts` (13 cases): good/empty/garbage JSON · unknown keys · >25 tasks · duplicates · dependency resolve/ambiguous · policy rejections · warnings                                               | ≥90% line coverage    |
-| Provider boundary                                                        | `FakeAiProvider` unit tests (`packages/provider/src/fake.test.ts`, 12 cases) covering heuristic extraction, dependency parsing, ambiguity flags, failure injection, and `meta()` honesty (`isFake`/`label`)                      | every case green      |
-| API routes + use cases                                                   | Fastify `app.inject()` over in-memory SQLite, fake provider: `intake.test.ts` (10 cases) covering capture/get/approve happy + failure paths (timeout → 503, invalid response → 502, budget → 402, not-found, dependency resolve) | ≥80% line coverage    |
-| Repos                                                                    | integration against temp-file SQLite (and `:memory:`)                                                                                                                                                                            | covered via API tests |
-| Web                                                                      | `client.test.ts` typed-decode tests; component smoke for error banner + fake badge; review/edit/approve interactions                                                                                                             | smoke-level           |
-| Live Claude                                                              | `pnpm test:live`, **gated by `ANTHROPIC_LIVE=1` + key**, never in CI                                                                                                                                                             | opt-in                |
-| E2E (later week)                                                         | Playwright happy path: capture → review → approve → complete → handover                                                                                                                                                          | optional stretch      |
+| Layer                                                                    | Approach                                                                                                                                                                                                                   | Requirements          |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| Domain (priority, sequence, schedule, state machine, normalizer, policy) | pure unit tests, table-driven; adversarial cases (cycles, overdue, empty, overflow)                                                                                                                                        | ≥90% line coverage    |
+| Validation pipeline                                                      | `packages/domain/src/extraction.test.ts`: good/empty/garbage output · unknown keys · duplicates · forward+backward dependency resolve/ambiguous · policy rejections · untrusted-string clamping · deadline resolution      | ≥90% line coverage    |
+| Provider boundary                                                        | `FakeAiProvider` unit tests (`packages/provider/src/fake.test.ts`) covering heuristic extraction, verbatim deadline hints (no date arithmetic), dependency parsing, ambiguity flags, failure injection, and `meta` honesty | every case green      |
+| API routes + use cases                                                   | Fastify `app.inject()` over in-memory SQLite: capture/get/approve happy + failure paths (timeout → 503, invalid response → 502, budget → 402, 404, 409), identity mismatch, rejected-draft approval, rate limit + size cap | ≥80% line coverage    |
+| Repos                                                                    | integration against temp-file SQLite (and `:memory:`)                                                                                                                                                                      | covered via API tests |
+| Web                                                                      | `client.test.ts` typed-decode tests + component tests (`@testing-library/react`, jsdom) for loading/error/retry surfaces, task actions, draft review and provider-badge honesty                                            | behaviour-level       |
+| Live Claude                                                              | not present — the real provider is M3; no test in this repo can make a paid call                                                                                                                                           | n/a until M3          |
+| E2E (later week)                                                         | Playwright happy path: capture → review → approve → complete → handover                                                                                                                                                    | optional stretch      |
 
-CI (GitHub Actions): install → lint → typecheck → test → build. Secrets are never needed
-for CI. Coverage thresholds are enforced in the same CI run.
+CI (GitHub Actions): install → lint → typecheck → **format** → test → build, plus a
+fresh-database migration smoke test (apply to an empty file, then re-apply to prove
+idempotence). Secrets are never needed and no job can make a paid API call. Coverage
+thresholds are **not** enforced yet — that gate is still open (see §10 M5/H-01); the suite
+is behaviour-driven rather than percentage-driven today.
 
 ## 9. Repository structure
 
@@ -399,7 +454,7 @@ shift-pilot/
 ├── package.json               # root scripts: dev/test/typecheck/lint/build
 ├── packages/
 │   ├── contracts/             # zod schemas + types (shared SOT) — incl. M2 intake schemas
-│   ├── domain/                # pure engines, zero runtime deps · extraction.ts (pipeline)
+│   ├── domain/                # deterministic engines · extraction.ts (pipeline) · time.ts (shift-local clock)
 │   └── provider/              # AiProvider · FakeAiProvider (heuristic) · fixtures · ShiftContext
 └── apps/
     ├── api/                   # Fastify · use-cases · db (Drizzle/better-sqlite3) · repos · config
@@ -427,18 +482,25 @@ directories (tree-shaking + import hygiene).
   `getIntake` / `approveIntake` use cases + routes · web intake→review→approve UI · typed
   degraded/offline surfaces (fake-provider badge, error banners). **Done.** The AI is fully
   isolated: it only produces untrusted candidates; humans approve before any `Task` exists.
-- **M3** Handover persistence + live `claude` provider behind the existing interface (recorded
-  fixtures + drift test) — deferred.
-- **M4** Web polish: plan/next/handover views, interrupted-replan assist, voice capture —
-  partially present (plan/handover views exist; capture is text).
-- **M5** Hardening, docs, demo script — in progress (this doc update).
+- **M3** Live `claude` provider behind the existing interface (+ handover prose, recorded
+  fixtures/drift test) — **not started**. This is the remaining Week-1 blocker: no real AI
+  call happens anywhere in the repo today.
+- **M4** Web polish — **partially present**: intake/review/approve, plan with task state
+  actions and re-derived planning, handover facts, explicit loading/error/retry states,
+  labelled controls and keyboard focus. Interrupted-replan assist and voice capture are not
+  built.
+- **M5** Hardening, docs, demo — **partially present**: adversarial audit remediated
+  (integrity, AI trust boundary, shift-local time, cost controls), CI gates aligned, docs
+  reconciled. `scripts/demo.md` + `scripts/seed.ts` (H-02) and coverage thresholds (H-01)
+  are not done.
 
 `AI_PROVIDER=fake` makes the whole product runnable and demoable with zero cost and no key.
 Selecting `claude` is a clear boot-time error until M3 lands the real provider.
 
 MVP delivers capabilities 1–9 of the brief: capture, extraction, priority, dependencies,
-sequence, daily plan (timetable projection), what-next, persistence, safe validation. `claude`
-activation and handover storage are M3.
+sequence, daily plan (timetable projection), what-next, persistence, safe validation — all
+against the offline provider. `claude` activation, AI handover prose and handover storage
+are M3.
 
 ### Stretch (later weeks, architecture-ready)
 
@@ -474,8 +536,12 @@ activation and handover storage are M3.
 
 ## 12. Open questions / consciously deferred
 
-- Timezone handling (MVP: single-server local time, documented; shifts carry their date
-  explicitly).
+- ~~Timezone handling~~ — **resolved**: shifts carry an IANA `timezone` and all deadline
+  resolution is shift-local (§4 "Time semantics"). Still open: per-user zone selection in the
+  UI (today the creating browser's zone is used) and shifts that cross midnight.
 - Multi-device sync conflicts beyond optimistic locking (defer; MVP conflict = 409 + reload).
-- Choice of model/version behind `ANTHROPIC_MODEL` (defer until live integration).
+- Choice of model/version behind `ANTHROPIC_MODEL` (defer until live integration; the repo
+  deliberately ships no default model id).
+- Monetary budget enforcement: the app can throttle requests but cannot read an account
+  balance, so a currency cap must be set in the Anthropic console (documented in README).
 - Whether "breaks" deserve their own planning (defer; represent as tasks).

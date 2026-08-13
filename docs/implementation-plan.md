@@ -1,6 +1,7 @@
 # SHIFT PILOT — Implementation Plan
 
-Status: M2 complete (AI intake + review + approve) · Target: complete, tested, demoable MVP
+Status: M2 complete + Phase-B audit remediation · Target: complete, tested, demoable MVP
+Last updated: 2026-08-13
 Milestones: M0–M5. Every issue below is GitHub-sized (≤ ~1 day, ≤ ~400 changed lines,
 one concern, mergeable independently).
 
@@ -53,14 +54,16 @@ one concern, mergeable independently).
 - **Acceptance**: full matrix unit test; illegal transitions typed errors, not silent.
 - **Done when**: ≥90% coverage.
 
-### D-03 · Deadline vocabulary + normalizer
+### D-03 · Deadline vocabulary + normalizer — **done (corrected in Phase B)**
 
-- **Scope**: resolve hints (`before close`, `EOD`, `2pm`, `14:00`, `in 30m`, `now/ASAP`,
-  weekday names, `today/tomorrow`) against `ShiftContext`; `unresolved` marker; estimate
-  defaults per category; duplicate detection (similarity ≥0.85).
-- **Acceptance**: table-driven tests for every vocabulary entry + unknown + past-deadline
-  cases; `deadlineSource` recorded.
-- **Done when**: normalizer green; unresolved deadlines flagged not failed.
+- **Scope**: resolve verbatim hints (`before close`, `EOD`, `2pm`, `14:00`, `in 30m`,
+  `tomorrow 9am`, named times) against the shift's date **and IANA time zone**;
+  `unresolved` marker; duplicate detection by normalized title.
+- **As built**: `packages/domain/src/time.ts` (+ `time.test.ts`). Originally this logic lived
+  inside `FakeAiProvider` and stamped local wall-clock times as UTC; Phase B moved it into
+  the domain so every provider shares one deterministic calendar, and fixed the zone bug.
+- **Not built**: weekday names and `now/ASAP` as deadlines, per-category estimate defaults,
+  fuzzy duplicate similarity (exact normalized-title match is used instead).
 
 ### D-04 · Priority engine with explain
 
@@ -118,16 +121,19 @@ one concern, mergeable independently).
 
 ### A-03 · FakeAiProvider (deterministic offline implementation) — **done**
 
-- `packages/provider/src/fake.ts`: heuristic extractor (line/sentence splitting, keyword
-  categories, vocabulary deadlines, `#n` + free-text dependency parsing, ambiguity flags),
-  `meta()` is honest (`isFake: true`, label `"Fake (offline heuristic) — simulated, not a real
-LLM"`, `promptVersion: "fake-1"`), `forcedFailure` injection. `fake.test.ts` (12 cases). No
-  `composeHandover` (handover is M3).
+- `packages/provider/src/fake.ts`: heuristic extractor (line splitting, keyword categories,
+  duration parsing, **verbatim** deadline hints, `#n` + free-text dependency parsing,
+  ambiguity flags), `meta` is an honest property (`isFake: true`, label `"Fake (offline
+heuristic) — simulated, not a real LLM"`, `promptVersion: "fake-1"`), `forcedFailure`
+  injection. `fake.test.ts`. `generateHandover` returns a deterministic summary; it is not
+  yet called by any use case (AI handover prose is M3).
 
-### A-04 · ClaudeProvider (behind the interface) — **deferred to M3**
+### A-04 · ClaudeProvider (behind the interface) — **deferred to M3 (the remaining Week-1 blocker)**
 
-- Not implemented. `AI_PROVIDER=claude` is a boot-time error with a clear message. Interface
-  is ready; see `architecture.md §5` for the activation path.
+- Not implemented. `AI_PROVIDER=claude` is a boot-time error with a clear message. The
+  interface is ready and now carries an `AbortSignal` so the API's timeout can cancel a real
+  HTTP call; cost controls (rate limit, input cap, bounded timeout) are already in place at
+  the route. See `architecture.md §5` for the activation path.
 
 ### A-05 / A-06 · Recorded fixtures + gated live test — **deferred to M3**
 
@@ -145,6 +151,36 @@ LLM"`, `promptVersion: "fake-1"`), `forcedFailure` injection. `fake.test.ts` (12
   `HandoverView`, `FakeProviderBadge`; `App.tsx` tabs + shift list.
 
 ---
+
+## Phase B — adversarial audit remediation (2026-08-13)
+
+An adversarial audit of M0–M2 found 28 findings. Fixed in Phase B:
+
+- **Integrity**: approval now inserts tasks, dependency edges and the intake status flip in
+  ONE transaction; a pipeline-rejected draft can no longer be approved; duplicate decisions
+  are refused; `completedAt` is stamped once and preserved; `blockReason` is cleared on
+  unblock; `ScheduledTask.position` is populated.
+- **Dependencies**: edges are validated against same-shift task ids on create and update
+  (unknown, cross-shift and self references → typed 422 instead of a 500 or a permanently
+  "blocked by nothing" plan); references resolve across the whole extraction batch, so
+  forward references work.
+- **AI trust boundary**: untrusted provider strings are clamped and every draft is re-parsed
+  through `ExtractionDraft` before persistence (previously a long title bricked the intake on
+  read-back); the client can no longer declare which provider ran; deadline resolution moved
+  out of the fake provider into `packages/domain/src/time.ts`.
+- **Time**: shifts carry an IANA zone; "by 2pm" resolves shift-locally, DST-correct.
+- **API**: body/URL shift identity mismatch rejected; unparseable `?now=` rejected;
+  `GET /api/shifts/:id/tasks` added; cancelled tasks excluded from duplicate detection.
+- **Cost/safety**: per-IP rate limit, input character cap, body limit, aborting timeout.
+- **UI**: explicit loading/error/retry states everywhere; task state actions with
+  re-derived planning; labelled controls, focus styles, live regions, responsive layout.
+- **Repo hygiene**: duplicate provider factory and dead M0 persistence types removed; `.env`
+  loaded in dev; migration `0002` given a default so it can apply to a populated table.
+- **CI/docs**: format check + fresh-DB migration smoke added; component tests added; all
+  documentation reconciled with the code that exists.
+
+Still open after Phase B: A-01 (no real AI integration — M3), coverage thresholds (H-01),
+demo script + seed (H-02), and everything listed under M3/M4/M5 below.
 
 ## M3 — Handover persistence + live `claude` provider (remaining)
 

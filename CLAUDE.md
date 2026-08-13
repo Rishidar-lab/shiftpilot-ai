@@ -17,12 +17,15 @@ Layered monorepo, dependencies point inward only:
 
 - `packages/contracts` — zod schemas + inferred types shared by all packages (the single source
   of truth for data shapes). Depends on zod only.
-- `packages/domain` — pure business logic: validation policy, priority scoring, sequencing,
-  scheduling, handover facts, deadline-hint resolution, task state machine. ZERO runtime
-  dependencies (type-only imports from contracts). No I/O, no AI, no framework.
-- `packages/provider` — AI boundary. `AiProvider` interface + `ClaudeProvider` (real) +
-  `FakeProvider` (deterministic, offline) + recorded fixtures. Nothing outside this package
-  may import `@anthropic-ai/sdk`.
+- `packages/domain` — deterministic business logic: validation policy, priority scoring,
+  sequencing, scheduling, handover facts, shift-local deadline resolution (`time.ts`), task
+  state machine. No I/O, no AI, no framework, no external runtime dependencies. It does
+  import contracts' zod schemas at runtime, because parsing untrusted provider output IS the
+  trust boundary and belongs in the same pure pipeline.
+- `packages/provider` — AI boundary. `AiProvider` interface + `FakeAiProvider`
+  (deterministic, offline) + recorded fixtures. `ClaudeProvider` is NOT built yet (M3).
+  Nothing outside this package may import `@anthropic-ai/sdk`. Providers report language
+  (including verbatim deadline phrases); they never compute instants or operational state.
 - `apps/api` — Fastify. Thin routes → use cases (orchestration) → domain + provider + repos.
   Drizzle + better-sqlite3 for persistence, drizzle-kit migrations.
 - `apps/web` — React + Vite browser app. Talks to the API over HTTP only. Never touches the
@@ -60,8 +63,8 @@ pnpm lint             # eslint
 pnpm test             # unit + integration tests, fully offline
 pnpm build            # production build (api dist + web dist)
 pnpm format           # prettier check
-pnpm db:generate      # generate a drizzle migration after schema changes (from apps/api)
-pnpm db:migrate       # apply migrations to DATABASE_PATH
+pnpm db:generate      # generate a drizzle migration after schema changes
+pnpm db:migrate       # apply migrations to DATABASE_PATH (relative paths resolve in apps/api)
 ```
 
 Provider selection is via env only (`AI_PROVIDER=fake|claude`); see `apps/api/src/config.ts`
@@ -88,8 +91,15 @@ and `.env.example`. Switching providers requires configuration, never code chang
   placeholders only. Real keys exist only in a local `.env` / deploy secrets.
 - API credentials are server-side only: the browser never receives them; CORS restricted to
   `CORS_ORIGIN`; provider config read once at boot via zod-validated env.
-- Treat AI output as untrusted input (see invariants). Provider responses are length-capped
-  (`AI_TIMEOUT_MS`, `max_tokens`), schema-checked, and domain-policy-checked before write.
+- Treat AI output as untrusted input (see invariants). Provider responses are time-bounded
+  (`AI_TIMEOUT_MS`, enforced with an AbortSignal), string-clamped, schema-checked and
+  domain-policy-checked before write; every draft is re-parsed through `ExtractionDraft`
+  before it may be persisted.
+- The AI-backed endpoint carries cost controls: per-IP rate limit (`AI_RATE_LIMIT`), input
+  character cap (`AI_MAX_INPUT_CHARS`), body limit. The app cannot enforce a monetary cap —
+  say so rather than implying one exists.
+- Provenance is a server fact: the recorded provider/prompt version comes from the
+  provider's own metadata, never from the request body.
 - Prompt-injection hardening: user text is demarked as data in the provider prompt and the
   output is constrained by a strict tool schema + whitelist; raw user text is escaped at
   render time in the web app (never injected as HTML).
@@ -99,7 +109,9 @@ and `.env.example`. Switching providers requires configuration, never code chang
 
 1. `pnpm typecheck` and `pnpm lint` pass.
 2. `pnpm test` passes fully offline (no network, no keys, no fixtures requiring paid APIs).
-3. New logic covered: domain/pipeline ≥ 90% line coverage; API routes ≥ 80%.
+3. New logic covered by behaviour-level tests (domain/pipeline, API routes via
+   `app.inject()`, web via component tests). Percentage thresholds are a target, not yet an
+   enforced CI gate — do not claim otherwise in docs.
 4. AI-facing changes include/adjust a fixture + contract test; prompt changes reviewed for
    injection surface and output-size caps.
 5. All failure paths surface as typed errors with UI-visible messages (no silent fallbacks;
