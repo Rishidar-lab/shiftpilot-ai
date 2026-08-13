@@ -5,6 +5,11 @@ import {
   EXTRACTION_OUTPUT_SCHEMA,
   EXTRACTION_PROMPT_ID,
   EXTRACTION_PROMPT_VERSION,
+  HANDOVER_OUTPUT_SCHEMA,
+  HANDOVER_PROMPT_ID,
+  HANDOVER_PROMPT_VERSION,
+  buildHandoverSystemPrompt,
+  buildHandoverUserPrompt,
   buildSystemPrompt,
   buildUserPrompt,
 } from "./prompt.js"
@@ -42,7 +47,14 @@ export interface ClaudeProviderOptions {
   maxOutputTokens: number
   /** Bounded retries for transient failures; the SDK applies exponential backoff. */
   maxRetries: number
-  /** Per-request timeout handed to the SDK, in milliseconds. */
+  /**
+   * TOTAL time budget for one logical call, in milliseconds — not per attempt.
+   *
+   * The SDK's own `timeout` is per attempt and it retries timeouts, so handing it
+   * the whole budget would mean a timed-out attempt could never be retried inside
+   * the caller's deadline (the caller's AbortSignal fires at the same instant).
+   * The budget is therefore divided across the attempts the retry policy allows.
+   */
   timeoutMs: number
   /**
    * Optional effort hint. Left unset by default because not every model accepts
@@ -85,7 +97,7 @@ export class ClaudeProvider implements AiProvider {
         // backoff. Retrying again here would multiply the attempts, so this is
         // the ONLY retry layer.
         maxRetries: options.maxRetries,
-        timeout: options.timeoutMs,
+        timeout: perAttemptTimeoutMs(options.timeoutMs, options.maxRetries),
       }).messages
     this.meta = {
       id: "claude",
@@ -94,6 +106,8 @@ export class ClaudeProvider implements AiProvider {
       model: options.model,
       promptId: EXTRACTION_PROMPT_ID,
       promptVersion: EXTRACTION_PROMPT_VERSION,
+      handoverPromptId: HANDOVER_PROMPT_ID,
+      handoverPromptVersion: HANDOVER_PROMPT_VERSION,
     }
   }
 
@@ -126,35 +140,66 @@ export class ClaudeProvider implements AiProvider {
       return { ok: false, failure: mapSdkError(error) }
     }
 
-    return readExtraction(message)
+    return readJsonMessage(message)
   }
 
   /**
-   * Not implemented for the real provider yet: AI-drafted handover prose is a
-   * later milestone, and the deterministic HandoverFacts path does not need it.
-   * Returning a typed failure keeps this honest — no placeholder prose, and no
-   * pretence that a call happened (docs/implementation-plan.md).
+   * Draft handover prose from an already-computed HandoverFacts snapshot.
+   *
+   * The facts are the ONLY input. There is no database access, no shift notes and
+   * no conversation history behind this call, so the model has nothing to draw a
+   * fabricated fact from — and the caller still validates the result against the
+   * same facts before showing any of it (packages/domain/src/handover.ts).
+   * Failure here is never fatal: the deterministic facts render regardless.
    */
-  async generateHandover(_facts: HandoverFacts): Promise<HandoverAttempt> {
-    return {
-      ok: false,
-      failure: {
-        kind: "misconfigured",
-        detail: "Claude handover prose is not implemented; handover uses deterministic facts",
-      },
+  async generateHandover(facts: HandoverFacts, signal?: AbortSignal): Promise<HandoverAttempt> {
+    let message: Anthropic.Message
+    try {
+      message = await this.messages.create(
+        {
+          model: this.options.model,
+          max_tokens: this.options.maxOutputTokens,
+          system: buildHandoverSystemPrompt(),
+          messages: [{ role: "user", content: buildHandoverUserPrompt(facts) }],
+          output_config: {
+            ...(this.options.effort ? { effort: this.options.effort } : {}),
+            format: { type: "json_schema", schema: HANDOVER_OUTPUT_SCHEMA },
+          },
+        },
+        signal ? { signal } : undefined,
+      )
+    } catch (error) {
+      return { ok: false, failure: mapSdkError(error) }
     }
+
+    return readJsonMessage(message)
   }
+}
+
+/**
+ * Split a total time budget across the attempts the retry policy allows, so a
+ * retried attempt still lands inside the caller's deadline. Floored at one
+ * second: a budget so small that an attempt cannot plausibly complete would turn
+ * every call into a guaranteed timeout.
+ */
+export function perAttemptTimeoutMs(totalMs: number, maxRetries: number): number {
+  return Math.max(1000, Math.floor(totalMs / (maxRetries + 1)))
 }
 
 /**
  * Turn a completed message into untrusted JSON.
  *
- * Everything that can go wrong short of a transport error shows up here:
- * a safety refusal, a truncated response, an empty body, or text that is not
- * JSON at all. Each becomes a typed failure rather than an exception or a
- * half-parsed object.
+ * Everything that can go wrong short of a transport error shows up here: a
+ * safety refusal, a truncated response, an exhausted context window, a paused
+ * turn, an empty body, or text that is not JSON at all. Each becomes a typed
+ * failure rather than an exception or a half-parsed object.
+ *
+ * Every terminating `stop_reason` the SDK declares is handled explicitly. An
+ * unhandled one would fall through to the text extraction and surface as the
+ * wrong diagnosis — "empty response body" for what was really an oversized
+ * prompt, for instance, which sends an operator hunting the wrong problem.
  */
-export function readExtraction(message: Anthropic.Message): ExtractionAttempt {
+export function readJsonMessage(message: Anthropic.Message): ExtractionAttempt {
   if (message.stop_reason === "refusal") {
     return {
       ok: false,
@@ -174,6 +219,29 @@ export function readExtraction(message: Anthropic.Message): ExtractionAttempt {
         kind: "invalid_response",
         detail: "the response was truncated by the output token limit",
       },
+    }
+  }
+
+  // The prompt itself did not fit. That is a configuration/sizing problem an
+  // operator must act on (lower AI_MAX_INPUT_CHARS, or use a larger model), not
+  // a transient fault worth retrying.
+  if (message.stop_reason === "model_context_window_exceeded") {
+    return {
+      ok: false,
+      failure: {
+        kind: "misconfigured",
+        detail: "the request exceeded the model's context window",
+      },
+    }
+  }
+
+  // Only reachable with server-side tools, which this adapter never enables. If
+  // it ever happens the body is incomplete, so treat it as unusable rather than
+  // parsing a partial answer.
+  if (message.stop_reason === "pause_turn") {
+    return {
+      ok: false,
+      failure: { kind: "invalid_response", detail: "the model paused before completing the turn" },
     }
   }
 

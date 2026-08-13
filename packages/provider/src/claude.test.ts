@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { describe, expect, it, vi } from "vitest"
 
-import { ClaudeProvider, mapSdkError, readExtraction } from "./claude.js"
+import { ClaudeProvider, mapSdkError, perAttemptTimeoutMs, readJsonMessage } from "./claude.js"
 import type { MessagesLike } from "./claude.js"
 import { EXTRACTION_PROMPT_ID, EXTRACTION_PROMPT_VERSION } from "./prompt.js"
 import { ExtractionCandidate } from "@shiftpilot/contracts"
@@ -162,7 +162,7 @@ describe("ClaudeProvider response handling", () => {
   })
 
   it("reports a refusal instead of pretending the extraction returned nothing", () => {
-    const attempt = readExtraction(
+    const attempt = readJsonMessage(
       message({
         stop_reason: "refusal",
         content: [],
@@ -176,7 +176,7 @@ describe("ClaudeProvider response handling", () => {
   })
 
   it("reports truncation instead of parsing a half-written response", () => {
-    const attempt = readExtraction(
+    const attempt = readJsonMessage(
       message({
         stop_reason: "max_tokens",
         content: [{ type: "text", text: '{"tas', citations: null }],
@@ -188,14 +188,14 @@ describe("ClaudeProvider response handling", () => {
   })
 
   it("reports an empty body", () => {
-    const attempt = readExtraction(message({ content: [] }))
+    const attempt = readJsonMessage(message({ content: [] }))
     expect(attempt.ok).toBe(false)
     if (attempt.ok) return
     expect((attempt.failure as { detail: string }).detail).toBe("empty response body")
   })
 
   it("ignores non-text blocks such as thinking when reading the payload", () => {
-    const attempt = readExtraction(
+    const attempt = readJsonMessage(
       message({
         content: [
           { type: "thinking", thinking: "", signature: "" } as unknown as Anthropic.ContentBlock,
@@ -272,10 +272,122 @@ describe("ClaudeProvider failure mapping", () => {
   })
 })
 
-describe("ClaudeProvider handover", () => {
-  it("declines handover prose rather than shipping a placeholder", async () => {
-    const attempt = await providerWith(vi.fn()).generateHandover({} as never)
+describe("stop reasons", () => {
+  it("reports an exhausted context window as a configuration problem, not an empty body", () => {
+    // Falling through to text extraction here would report "empty response body",
+    // sending an operator to look for a model fault instead of an input-size one.
+    const attempt = readJsonMessage(
+      message({ stop_reason: "model_context_window_exceeded", content: [] }),
+    )
     expect(attempt.ok).toBe(false)
+    if (attempt.ok) return
+    expect(attempt.failure.kind).toBe("misconfigured")
+    expect(attempt.failure).toMatchObject({ detail: expect.stringMatching(/context window/) })
+  })
+
+  it("treats a paused turn as unusable rather than parsing a partial body", () => {
+    const attempt = readJsonMessage(
+      message({
+        stop_reason: "pause_turn",
+        content: [{ type: "text", text: '{"tasks":[', citations: null }],
+      }),
+    )
+    expect(attempt.ok).toBe(false)
+    if (attempt.ok) return
+    expect(attempt.failure.kind).toBe("invalid_response")
+  })
+})
+
+describe("timeout budgeting", () => {
+  it("divides the total budget across the attempts retries allow", () => {
+    // The SDK's timeout is per attempt and it retries timeouts. Handing it the
+    // whole budget would mean a retry could never finish before the caller's
+    // AbortSignal fires, making maxRetries dead configuration for timeouts.
+    expect(perAttemptTimeoutMs(30_000, 2)).toBe(10_000)
+    expect(perAttemptTimeoutMs(30_000, 0)).toBe(30_000)
+  })
+
+  it("never produces a budget too small for an attempt to complete", () => {
+    expect(perAttemptTimeoutMs(1200, 5)).toBe(1000)
+  })
+})
+
+describe("ClaudeProvider handover", () => {
+  const FACTS = {
+    shiftId: "shift-1",
+    date: "2026-08-13",
+    generatedAt: "2026-08-13T05:00:00.000Z",
+    counts: {
+      total: 1,
+      active: 1,
+      inProgress: 0,
+      completed: 0,
+      blocked: 0,
+      cancelled: 0,
+      overdue: 0,
+      waiting: 0,
+    },
+    completed: [],
+    pending: [
+      { taskId: "t1", title: "Restock", priorityBucket: "low", deadlineAt: null, dueInMin: null },
+    ],
+    blocked: [],
+    overdue: [],
+    upcomingDeadlines: [],
+    warnings: [],
+    recommendations: [],
+  } as never
+
+  it("sends the facts as the only input and requests the handover schema", async () => {
+    const create = vi.fn().mockResolvedValue(
+      message({
+        content: [
+          {
+            type: "text",
+            text: '{"headline":"h","summary":"s","attention":[]}',
+            citations: null,
+          },
+        ],
+      }),
+    )
+    const attempt = await providerWith(create).generateHandover(FACTS)
+    expect(attempt.ok).toBe(true)
+
+    const [params] = create.mock.calls[0]!
+    const user = params.messages[0].content as string
+    // The facts are fenced as data, and nothing else is supplied — no raw shift
+    // notes, no database access, nothing the model could mine for a new fact.
+    expect(user).toContain("<<<FACTS")
+    expect(user).toContain("Restock")
+    expect(params.output_config.format.type).toBe("json_schema")
+  })
+
+  it("maps a provider outage to a typed failure instead of throwing", async () => {
+    const create = vi.fn().mockRejectedValue(new Anthropic.APIConnectionError({ message: "down" }))
+    const attempt = await providerWith(create).generateHandover(FACTS)
+    expect(attempt.ok).toBe(false)
+    if (attempt.ok) return
+    expect(attempt.failure.kind).toBe("network")
+  })
+
+  it("rejects non-JSON prose rather than passing text through as a narrative", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue(
+        message({ content: [{ type: "text", text: "Here is your handover!", citations: null }] }),
+      )
+    const attempt = await providerWith(create).generateHandover(FACTS)
+    expect(attempt.ok).toBe(false)
+    if (attempt.ok) return
+    expect(attempt.failure.kind).toBe("invalid_response")
+  })
+
+  it("declares a separately versioned handover prompt", () => {
+    const meta = providerWith(vi.fn()).meta
+    expect(meta.handoverPromptId).toBe("shiftpilot.handover-narrative")
+    expect(meta.handoverPromptVersion).toBeTruthy()
+    // Extraction and handover version independently.
+    expect(meta.handoverPromptId).not.toBe(meta.promptId)
   })
 })
 

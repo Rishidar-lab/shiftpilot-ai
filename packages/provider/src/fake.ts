@@ -25,6 +25,8 @@ export class FakeAiProvider implements AiProvider {
     model: null,
     promptId: "shiftpilot.task-extract",
     promptVersion: "fake-1",
+    handoverPromptId: "shiftpilot.handover-narrative",
+    handoverPromptVersion: "fake-1",
   }
 
   /**
@@ -49,18 +51,49 @@ export class FakeAiProvider implements AiProvider {
     return { ok: true, raw }
   }
 
+  /**
+   * Deterministic handover prose. Like the real provider it returns UNTRUSTED
+   * `raw` that the domain validates against the same facts, so the offline path
+   * exercises the identical pipeline rather than a shortcut. Every phrase is
+   * derived from the facts it was handed — this provider cannot invent either.
+   */
   async generateHandover(facts: HandoverFacts): Promise<HandoverAttempt> {
+    if (this.forcedFailure) return { ok: false, failure: this.forcedFailure }
+
+    const carried = facts.pending.length
+    const shape =
+      facts.counts.total === 0
+        ? "Nothing was captured for this shift."
+        : carried === 0
+          ? "Everything on the list was closed out; nothing carries over."
+          : facts.counts.overdue > 0
+            ? "The list did not fully clear, and some items are past their deadline."
+            : "Most of the list moved; a few items carry over to the next shift."
+
+    // Attention items are drawn from the facts, overdue first, then blocked —
+    // the same ordering a reader would expect, computed rather than chosen.
+    const attention = [
+      ...facts.overdue.map((t) => ({ taskId: t.taskId, why: "Past its deadline." })),
+      ...facts.blocked.map((t) => ({
+        taskId: t.taskId,
+        why:
+          t.blockedBy.length > 0
+            ? `Waiting on ${t.blockedBy.join(", ")}.`
+            : "Blocked and needs a decision.",
+      })),
+    ].slice(0, 5)
+
     return {
       ok: true,
       raw: {
+        headline: `Handover for ${facts.date}`,
         summary: [
-          `Shift ${facts.date}: ${facts.counts.completed} completed, ${facts.counts.cancelled} cancelled, ${facts.counts.active + facts.counts.inProgress} in progress, ${facts.counts.blocked} blocked, ${facts.counts.overdue} overdue.`,
-          ...(facts.warnings.length > 0
-            ? [
-                `${facts.warnings.length} warning(s): ${facts.warnings.map((w) => w.type).join(", ")}.`,
-              ]
-            : ["No warnings."]),
+          shape,
+          facts.warnings.length > 0
+            ? `The planner raised ${facts.warnings.map((w) => w.type).join(", ")}.`
+            : "The planner raised no warnings.",
         ].join(" "),
+        attention,
       },
     }
   }

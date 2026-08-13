@@ -34,6 +34,13 @@ export interface AiProviderMeta {
   model: string | null
   promptId: string
   promptVersion: string
+  /**
+   * Extraction and handover are separately versioned prompts: changing how the
+   * handover reads must not invalidate the provenance of past extractions, and
+   * an extraction change must not look like a handover change.
+   */
+  handoverPromptId: string
+  handoverPromptVersion: string
 }
 
 /**

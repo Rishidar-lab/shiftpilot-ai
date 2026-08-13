@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { FakeAiProvider } from "./fake.js"
 import type { ExtractionAttempt } from "./types.js"
-import type { ExtractionCandidate } from "@shiftpilot/contracts"
+import type { ExtractionCandidate, HandoverFacts } from "@shiftpilot/contracts"
 
 /** Unwrap a successful attempt's untrusted payload for assertions. */
 function tasksOf(attempt: ExtractionAttempt): ExtractionCandidate[] {
@@ -123,35 +123,93 @@ describe("FakeAiProvider", () => {
   })
 
   describe("generateHandover", () => {
-    it("produces a deterministic summary from structured facts", async () => {
-      const attempt = await provider.generateHandover({
-        shiftId: "shift-1",
-        date: "2026-08-12",
-        generatedAt: "2026-08-12T13:00:00.000Z",
-        counts: {
-          total: 5,
-          active: 1,
-          inProgress: 1,
-          completed: 2,
-          blocked: 1,
-          cancelled: 0,
-          overdue: 1,
-          waiting: 1,
+    /** Internally consistent facts: the lists agree with the counts. */
+    const FACTS: HandoverFacts = {
+      shiftId: "shift-1",
+      date: "2026-08-12",
+      generatedAt: "2026-08-12T13:00:00.000Z",
+      counts: {
+        total: 4,
+        active: 1,
+        inProgress: 0,
+        completed: 2,
+        blocked: 1,
+        cancelled: 0,
+        overdue: 1,
+        waiting: 0,
+      },
+      completed: [
+        { taskId: "c1", title: "Cold chain check", completedAt: "2026-08-12T07:00:00.000Z" },
+        { taskId: "c2", title: "Restock aisle 3", completedAt: "2026-08-12T09:00:00.000Z" },
+      ],
+      pending: [
+        {
+          taskId: "p1",
+          title: "Unfreeze walk-in",
+          priorityBucket: "high",
+          deadlineAt: "2026-08-12T07:00:00.000Z",
+          dueInMin: -360,
         },
-        completed: [],
-        pending: [],
-        blocked: [],
-        overdue: [],
-        upcomingDeadlines: [],
-        warnings: [{ type: "dependency_cycle", taskIds: ["a", "b"] }],
-        recommendations: [],
-      })
+      ],
+      blocked: [{ taskId: "b1", title: "Install shelving", blockedBy: ["Parts delivery"] }],
+      overdue: [{ taskId: "p1", title: "Unfreeze walk-in", overdueMin: 360 }],
+      upcomingDeadlines: [],
+      warnings: [{ type: "dependency_cycle", taskIds: ["a", "b"] }],
+      recommendations: [],
+    }
+
+    it("produces a deterministic narrative from structured facts", async () => {
+      const attempt = await provider.generateHandover(FACTS)
       expect(attempt.ok).toBe(true)
       if (!attempt.ok) return
       expect(attempt.raw).toEqual({
+        headline: "Handover for 2026-08-12",
         summary:
-          "Shift 2026-08-12: 2 completed, 0 cancelled, 2 in progress, 1 blocked, 1 overdue. 1 warning(s): dependency_cycle.",
+          "The list did not fully clear, and some items are past their deadline. " +
+          "The planner raised dependency_cycle.",
+        attention: [
+          { taskId: "p1", why: "Past its deadline." },
+          { taskId: "b1", why: "Waiting on Parts delivery." },
+        ],
       })
+    })
+
+    it("returns the identical result on repeated calls", async () => {
+      const first = await provider.generateHandover(FACTS)
+      const second = await provider.generateHandover(FACTS)
+      expect(first).toEqual(second)
+    })
+
+    it("only ever references task ids present in the facts", async () => {
+      const attempt = await provider.generateHandover(FACTS)
+      expect(attempt.ok).toBe(true)
+      if (!attempt.ok) return
+      const known = new Set(["c1", "c2", "p1", "b1"])
+      const raw = attempt.raw as { attention: Array<{ taskId: string }> }
+      for (const item of raw.attention) expect(known.has(item.taskId)).toBe(true)
+    })
+
+    it("caps attention at the five entries the contract allows", async () => {
+      const many: HandoverFacts = {
+        ...FACTS,
+        overdue: Array.from({ length: 8 }, (_, i) => ({
+          taskId: `o${i}`,
+          title: `Late ${i}`,
+          overdueMin: 10,
+        })),
+      }
+      const attempt = await provider.generateHandover(many)
+      expect(attempt.ok).toBe(true)
+      if (!attempt.ok) return
+      expect((attempt.raw as { attention: unknown[] }).attention).toHaveLength(5)
+    })
+
+    it("can be forced to fail so degraded handover has an offline twin", async () => {
+      const failing = new FakeAiProvider({ kind: "network", message: "down" })
+      const attempt = await failing.generateHandover(FACTS)
+      expect(attempt.ok).toBe(false)
+      if (attempt.ok) return
+      expect(attempt.failure.kind).toBe("network")
     })
   })
 })
