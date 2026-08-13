@@ -86,6 +86,8 @@ export const extractionDrafts = sqliteTable(
     description: text("description"),
     category: text("category"),
     estimatedMinutes: integer("estimated_minutes"),
+    /** Provenance of the estimate: stated by the worker, inferred, or unknown. */
+    estimateSource: text("estimate_source").notNull().default("unknown"),
     deadlineAt: text("deadline_at"),
     deadlineSource: text("deadline_source").notNull(),
     /** The verbatim phrase the deadline was resolved from, for reviewer context. */

@@ -72,6 +72,10 @@ function failureMessage(failure: ProviderFailure): string {
       return `The AI provider returned an invalid response: ${failure.detail}`
     case "budget_exceeded":
       return "The AI provider budget was exceeded."
+    case "unauthorized":
+      return "The AI provider rejected the server's credentials."
+    case "misconfigured":
+      return `The AI provider could not process the request: ${failure.detail}`
   }
 }
 
@@ -81,6 +85,17 @@ function mapFailure(failure: ProviderFailure): ProviderError {
       return new ProviderError("ai_invalid_response", failure.kind, failure.detail)
     case "budget_exceeded":
       return new ProviderError("ai_budget_exceeded", failure.kind, "AI budget exceeded")
+    case "quota":
+      return new ProviderError("ai_budget_exceeded", failure.kind, failureMessage(failure))
+    case "unauthorized":
+    case "misconfigured":
+      // An operator problem, not a user problem: surface it as the AI being
+      // unavailable and keep the provider detail out of the client message.
+      return new ProviderError(
+        "ai_unavailable",
+        failure.kind,
+        "The AI provider is not correctly configured on the server.",
+      )
     default:
       return new ProviderError("ai_unavailable", failure.kind, failureMessage(failure))
   }

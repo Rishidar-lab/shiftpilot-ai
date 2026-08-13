@@ -16,7 +16,7 @@ export function FakeProviderBadge({ health }: { health: HealthResponse }) {
   }
   return (
     <span className="badge real" title={health.providerLabel}>
-      Live AI · {health.provider}
+      Live AI · {health.model ?? health.provider}
     </span>
   )
 }

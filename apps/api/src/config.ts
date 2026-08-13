@@ -39,9 +39,40 @@ export const envSchema = z.object({
     z.coerce.number().int().positive().optional(),
   ),
   DATABASE_PATH: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+
+  // --- Claude provider (only consulted when AI_PROVIDER=claude) ---
+  /** Server-side only. Never sent to the browser, never logged, never committed. */
+  ANTHROPIC_API_KEY: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  /**
+   * Model identifier. Deliberately has NO default: model ids change over time,
+   * and a hard-coded one would either rot or silently pin an outdated model.
+   */
+  ANTHROPIC_MODEL: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  ANTHROPIC_MAX_OUTPUT_TOKENS: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().min(256).max(32000).optional(),
+  ),
+  ANTHROPIC_MAX_RETRIES: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().min(0).max(5).optional(),
+  ),
+  /** Optional: not every model accepts an effort hint, so it is unset by default. */
+  ANTHROPIC_EFFORT: z.preprocess(
+    emptyToUndefined,
+    z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+  ),
 })
 
 type ParsedEnv = z.infer<typeof envSchema>
+
+/** Resolved Claude settings; present only when AI_PROVIDER=claude. */
+export interface AnthropicConfig {
+  apiKey: string
+  model: string
+  maxOutputTokens: number
+  maxRetries: number
+  effort?: "low" | "medium" | "high" | "xhigh" | "max"
+}
 
 export interface AppConfig {
   port: number
@@ -54,6 +85,7 @@ export interface AppConfig {
   aiRateLimit: number
   aiRateLimitWindowMs: number
   databasePath: string
+  anthropic: AnthropicConfig | null
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -67,6 +99,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   aiRateLimit: 10,
   aiRateLimitWindowMs: 60_000,
   databasePath: "data/shiftpilot.db",
+  anthropic: null,
 }
 
 function applyDefaults(env: ParsedEnv): AppConfig {
@@ -81,6 +114,7 @@ function applyDefaults(env: ParsedEnv): AppConfig {
     aiRateLimit: env.AI_RATE_LIMIT ?? DEFAULT_CONFIG.aiRateLimit,
     aiRateLimitWindowMs: env.AI_RATE_LIMIT_WINDOW_MS ?? DEFAULT_CONFIG.aiRateLimitWindowMs,
     databasePath: env.DATABASE_PATH ?? DEFAULT_CONFIG.databasePath,
+    anthropic: null,
   }
 }
 
@@ -97,11 +131,30 @@ export function parseAppConfig(env: Record<string, string | undefined>): AppConf
     throw new Error(`Invalid environment configuration: ${detail}`)
   }
   const config = applyDefaults(result.data)
-  if (config.aiProvider === "claude") {
+  if (config.aiProvider !== "claude") return config
+
+  // Fail fast and loudly: a half-configured Claude mode must never start and
+  // must never quietly degrade to the offline provider, or an operator could
+  // believe real AI is running when it is not.
+  const missing: string[] = []
+  if (result.data.ANTHROPIC_API_KEY === undefined) missing.push("ANTHROPIC_API_KEY")
+  if (result.data.ANTHROPIC_MODEL === undefined) missing.push("ANTHROPIC_MODEL")
+  if (missing.length > 0) {
     throw new Error(
-      "AI_PROVIDER=claude is not wired yet: the real Claude provider lands in M3 " +
-        "(docs/implementation-plan.md A-04). Keep AI_PROVIDER=fake for now.",
+      `AI_PROVIDER=claude requires ${missing.join(" and ")}. ` +
+        "Set them in apps/api/.env (never in source control), or use AI_PROVIDER=fake " +
+        "for the offline provider. See .env.example.",
     )
   }
-  return config
+
+  return {
+    ...config,
+    anthropic: {
+      apiKey: result.data.ANTHROPIC_API_KEY!,
+      model: result.data.ANTHROPIC_MODEL!,
+      maxOutputTokens: result.data.ANTHROPIC_MAX_OUTPUT_TOKENS ?? 4096,
+      maxRetries: result.data.ANTHROPIC_MAX_RETRIES ?? 2,
+      ...(result.data.ANTHROPIC_EFFORT ? { effort: result.data.ANTHROPIC_EFFORT } : {}),
+    },
+  }
 }

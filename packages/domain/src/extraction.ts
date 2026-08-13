@@ -86,6 +86,7 @@ export function runExtraction(req: ExtractRequest): ExtractionReport {
             description: null,
             category: null,
             estimatedMinutes: null,
+            estimateSource: "unknown",
             deadlineAt: null,
             deadlineSource: "unresolved",
             deadlineHint: null,
@@ -174,6 +175,7 @@ export function runExtraction(req: ExtractRequest): ExtractionReport {
           description: c.description === null ? null : clamp(c.description, MAX_DESCRIPTION_LENGTH),
           category: c.category as Category | null,
           estimatedMinutes: c.estimatedMinutes,
+          estimateSource: estimateSourceOf(c),
           deadlineAt: deadline.status === "resolved" ? deadline.deadlineAt : null,
           deadlineSource: deadline.status === "resolved" ? "parsed" : "unresolved",
           deadlineHint: c.deadlineHint === null ? null : clamp(c.deadlineHint, MAX_HINT_LENGTH),
@@ -242,6 +244,7 @@ function guard(draft: ExtractionDraft, index: number): ExtractionDraft {
     description: null,
     category: null,
     estimatedMinutes: null,
+    estimateSource: "unknown",
     deadlineAt: null,
     deadlineSource: "unresolved",
     deadlineHint: null,
@@ -316,6 +319,7 @@ function rejected(
       // Out-of-range values are the reason for rejection; do not echo them into
       // a field the contract constrains.
       estimatedMinutes: null,
+      estimateSource: "unknown",
       deadlineAt: null,
       deadlineSource: "unresolved",
       deadlineHint: c.deadlineHint === null ? null : clamp(c.deadlineHint, MAX_HINT_LENGTH),
@@ -327,6 +331,16 @@ function rejected(
     },
     index,
   )
+}
+
+/**
+ * Provenance of a duration. A value with no declared source is treated as
+ * INFERRED, never as stated: we can only claim the worker said something when
+ * the provider actually reports that they did.
+ */
+function estimateSourceOf(c: ExtractionCandidate): ExtractionDraft["estimateSource"] {
+  if (c.estimatedMinutes === null) return "unknown"
+  return c.estimatedMinutesSource === "stated" ? "stated" : "inferred"
 }
 
 function normalize(s: string): string {

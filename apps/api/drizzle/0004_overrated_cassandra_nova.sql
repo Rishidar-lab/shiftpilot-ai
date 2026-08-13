@@ -1,0 +1,1 @@
+ALTER TABLE `extraction_drafts` ADD `estimate_source` text DEFAULT 'unknown' NOT NULL;

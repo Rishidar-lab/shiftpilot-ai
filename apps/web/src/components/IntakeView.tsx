@@ -377,6 +377,9 @@ function DraftCard({
         </label>
         <label htmlFor={`minutes-${draft.id}`}>
           Duration (min)
+          {/* An inferred duration is the model's guess, not something the worker
+              said. It must never look like a stated fact. */}
+          {draft.estimateSource === "inferred" && <span className="inferred"> · AI estimate</span>}
           <input
             id={`minutes-${draft.id}`}
             type="number"
