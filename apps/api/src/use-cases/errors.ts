@@ -9,6 +9,25 @@ export class NotFoundError extends Error {
   }
 }
 
+/** A well-formed request that breaks a domain rule (HTTP 422). */
+export class ValidationError extends Error {
+  constructor(
+    message: string,
+    public readonly details?: unknown,
+  ) {
+    super(message)
+    this.name = "ValidationError"
+  }
+}
+
+/** Server-side throttle on AI-backed endpoints (HTTP 429). */
+export class RateLimitError extends Error {
+  constructor(public readonly retryAfterSeconds: number) {
+    super(`too many requests — retry in ${retryAfterSeconds}s`)
+    this.name = "RateLimitError"
+  }
+}
+
 export class ConflictError extends Error {
   constructor(message: string) {
     super(message)

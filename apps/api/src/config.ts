@@ -27,6 +27,17 @@ export const envSchema = z.object({
   ),
   AI_PROVIDER: z.preprocess(emptyToUndefined, z.enum(["fake", "claude"]).optional()),
   AI_TIMEOUT_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
+  /** Hard cap on a single intake, below the contracts limit of 20000. */
+  AI_MAX_INPUT_CHARS: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().min(1).max(20000).optional(),
+  ),
+  /** Requests per window allowed against the AI-backed endpoints. */
+  AI_RATE_LIMIT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
+  AI_RATE_LIMIT_WINDOW_MS: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().positive().optional(),
+  ),
   DATABASE_PATH: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
 })
 
@@ -39,6 +50,9 @@ export interface AppConfig {
   nodeEnv: "development" | "test" | "production"
   aiProvider: "fake" | "claude"
   aiTimeoutMs: number
+  aiMaxInputChars: number
+  aiRateLimit: number
+  aiRateLimitWindowMs: number
   databasePath: string
 }
 
@@ -49,6 +63,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   nodeEnv: "development",
   aiProvider: "fake",
   aiTimeoutMs: 30000,
+  aiMaxInputChars: 8000,
+  aiRateLimit: 10,
+  aiRateLimitWindowMs: 60_000,
   databasePath: "data/shiftpilot.db",
 }
 
@@ -60,6 +77,9 @@ function applyDefaults(env: ParsedEnv): AppConfig {
     nodeEnv: env.NODE_ENV ?? DEFAULT_CONFIG.nodeEnv,
     aiProvider: env.AI_PROVIDER ?? DEFAULT_CONFIG.aiProvider,
     aiTimeoutMs: env.AI_TIMEOUT_MS ?? DEFAULT_CONFIG.aiTimeoutMs,
+    aiMaxInputChars: env.AI_MAX_INPUT_CHARS ?? DEFAULT_CONFIG.aiMaxInputChars,
+    aiRateLimit: env.AI_RATE_LIMIT ?? DEFAULT_CONFIG.aiRateLimit,
+    aiRateLimitWindowMs: env.AI_RATE_LIMIT_WINDOW_MS ?? DEFAULT_CONFIG.aiRateLimitWindowMs,
     databasePath: env.DATABASE_PATH ?? DEFAULT_CONFIG.databasePath,
   }
 }
@@ -79,7 +99,7 @@ export function parseAppConfig(env: Record<string, string | undefined>): AppConf
   const config = applyDefaults(result.data)
   if (config.aiProvider === "claude") {
     throw new Error(
-      "AI_PROVIDER=claude is not available yet: the Claude provider ships in M2 " +
+      "AI_PROVIDER=claude is not wired yet: the real Claude provider lands in M3 " +
         "(docs/implementation-plan.md A-04). Keep AI_PROVIDER=fake for now.",
     )
   }

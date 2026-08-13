@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify"
 
 import { getHandover, getNext, getPlan } from "../use-cases/plan.js"
+import { ValidationError } from "../use-cases/errors.js"
 import type { Database } from "../db/index.js"
 import type { HandoverFacts, NextDecision, WorkPlan } from "@shiftpilot/contracts"
 
@@ -27,9 +28,18 @@ export function registerPlan(app: FastifyInstance, db: Database): void {
   })
 }
 
+/**
+ * `?now=` overrides the clock for deterministic replay. An unparseable value is
+ * rejected rather than silently replaced with the real clock: a caller that
+ * asked for a specific instant and quietly got "whenever the server ran" cannot
+ * tell that its request was ignored (audit A-14).
+ */
 function parseNow(request: FastifyRequest): Date {
   const query = request.query as { now?: string } | undefined
   if (query?.now === undefined) return new Date()
   const parsed = new Date(query.now)
-  return Number.isNaN(parsed.getTime()) ? new Date() : parsed
+  if (Number.isNaN(parsed.getTime())) {
+    throw new ValidationError(`"now" must be an ISO 8601 datetime; received "${query.now}"`)
+  }
+  return parsed
 }
