@@ -56,6 +56,25 @@ export type PriorityBucket = z.infer<typeof PriorityBucket>
 const isoDatetime = z.string().datetime()
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
 
+/**
+ * IANA time zone name (e.g. "Europe/London"). A shift is a LOCAL-time concept:
+ * "before close" and "by 2pm" mean 2pm where the worker stands, not 2pm UTC.
+ * Every shift therefore carries its own zone and all deadline-hint resolution
+ * happens against it (docs/architecture.md §4 "Time semantics").
+ */
+const timeZone = z.string().min(1).max(64).refine(isSupportedTimeZone, {
+  message: "expected a valid IANA time zone name",
+})
+
+export function isSupportedTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value })
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Context a shift provides for resolving hints and planning. */
 export const ShiftContext = z
   .object({
@@ -63,6 +82,7 @@ export const ShiftContext = z
     date: isoDate,
     startAt: isoDatetime,
     endAt: isoDatetime,
+    timezone: timeZone,
   })
   .strict()
 export type ShiftContext = z.infer<typeof ShiftContext>
@@ -73,6 +93,8 @@ export const Shift = z
     date: isoDate,
     startAt: isoDatetime,
     endAt: isoDatetime,
+    /** IANA zone the shift's wall-clock times are expressed in. */
+    timezone: timeZone,
     role: z.string().max(200).nullable(),
     createdAt: isoDatetime,
   })
@@ -261,6 +283,8 @@ export const CreateShiftRequest = z
     date: isoDate,
     startAt: isoDatetime,
     endAt: isoDatetime,
+    /** Defaults to the server's zone when omitted (single-tenant Week-1 scope). */
+    timezone: timeZone.optional(),
     role: z.string().max(200).nullable().optional(),
   })
   .strict()
@@ -367,8 +391,14 @@ export const ExtractionCandidate = z
   .object({
     title: z.string().min(1).max(120),
     description: z.string().max(2000).nullable(),
-    /** ISO datetime if the model inferred a deadline, else null. */
-    deadlineAt: isoDatetime.nullable(),
+    /**
+     * The VERBATIM deadline phrase from the worker's text ("by 2pm", "before
+     * close"), or null when the text states no deadline. Providers must NOT do
+     * date arithmetic: resolving a phrase to an instant is a deterministic
+     * domain rule (packages/domain/src/time.ts) so that every provider — fake
+     * or real — produces identical deadlines for identical words.
+     */
+    deadlineHint: z.string().max(200).nullable(),
     /** Whole minutes; null = unknown. The pipeline rejects out-of-range values. */
     estimatedMinutes: z.number().int().nullable(),
     explicitUrgency: UrgencyLevel.nullable(),
@@ -401,13 +431,18 @@ export const ExtractionDraft = z
     description: z.string().max(2000).nullable(),
     category: Category.nullable(),
     estimatedMinutes: z.number().int().min(1).max(480).nullable(),
+    /** Resolved by domain normalization from `deadlineHint` — never by the model. */
     deadlineAt: isoDatetime.nullable(),
     deadlineSource: DeadlineSource,
+    /** The verbatim phrase the deadline came from, kept for reviewer context. */
+    deadlineHint: z.string().max(200).nullable(),
     explicitUrgency: UrgencyLevel,
     /** Resolved/normalized dependency references for human confirmation. */
     dependsOn: z.array(z.string().max(200)),
     sourceText: z.string().max(20000),
-    /** Machine reasons: a rejection code, or review flags for needsReview. */
+    /** Stable machine code when disposition is "rejected"; null otherwise. */
+    rejectionReason: ExtractionRejectionReason.nullable(),
+    /** Human-readable review notes (model ambiguity flags, unresolved hints). */
     reasons: z.array(z.string().max(500)),
   })
   .strict()
@@ -433,13 +468,18 @@ export type ExtractionReport = z.infer<typeof ExtractionReport>
 
 // Request DTOs ---------------------------------------------------------------
 
-/** Capture a worker's free-text intake for a shift. */
+/**
+ * Capture a worker's free-text intake for a shift.
+ *
+ * The URL path carries the authoritative shift id. `shiftId` may be repeated in
+ * the body (the web client does), but a MISMATCH is rejected rather than
+ * silently resolved. There is deliberately no provider field: which model ran
+ * is a server fact, never a client claim (docs/architecture.md §5).
+ */
 export const CreateIntakeRequest = z
   .object({
-    shiftId: z.string().min(1),
+    shiftId: z.string().min(1).optional(),
     rawText: z.string().min(1).max(20000),
-    /** Optional explicit provider override; defaults to the configured provider. */
-    provider: z.enum(["fake", "claude"]).optional(),
   })
   .strict()
 export type CreateIntakeRequest = z.infer<typeof CreateIntakeRequest>
@@ -478,11 +518,17 @@ export type ApproveIntakeRequest = z.infer<typeof ApproveIntakeRequest>
 // Envelope
 // ---------------------------------------------------------------------------
 
+/**
+ * `providerIsFake` is declared by the provider itself, not inferred from its id,
+ * so the UI can never mislabel simulated output as a real model.
+ */
 export const HealthResponse = z
   .object({
     status: z.literal("ok"),
     version: z.string(),
     provider: z.string(),
+    providerLabel: z.string(),
+    providerIsFake: z.boolean(),
     time: z.string(),
   })
   .strict()
@@ -492,6 +538,8 @@ export const ApiErrorCode = z.enum([
   "validation_error",
   "not_found",
   "conflict",
+  /** Server-side throttle on the AI-backed endpoints (HTTP 429). */
+  "rate_limited",
   "ai_unavailable",
   "ai_invalid_response",
   "ai_budget_exceeded",
