@@ -22,6 +22,7 @@ export class FakeAiProvider implements AiProvider {
     id: "fake",
     label: "Fake (offline heuristic) — simulated, not a real LLM",
     isFake: true,
+    model: null,
     promptId: "shiftpilot.task-extract",
     promptVersion: "fake-1",
   }
@@ -121,6 +122,7 @@ interface CandidateFields {
   description: string | null
   deadlineHint: string | null
   estimatedMinutes: number | null
+  estimatedMinutesSource: "stated" | "inferred" | null
   explicitUrgency: string | null
   category: string | null
   dependencies: string[]
@@ -139,6 +141,7 @@ function extractCandidates(input: string): CandidateFields[] {
         description: t.description ?? null,
         deadlineHint: t.deadlineHint ?? null,
         estimatedMinutes: t.estimatedMinutes ?? null,
+        estimatedMinutesSource: t.estimatedMinutes === undefined ? null : "stated",
         explicitUrgency: t.explicitUrgency ?? null,
         category: t.category ?? null,
         dependencies: t.dependencies ?? [],
@@ -172,6 +175,8 @@ function extractOne(line: string): CandidateFields {
     description: null,
     deadlineHint,
     estimatedMinutes,
+    // This provider only ever reads durations out of the text; it never guesses.
+    estimatedMinutesSource: estimatedMinutes === null ? null : "stated",
     explicitUrgency,
     category,
     dependencies,

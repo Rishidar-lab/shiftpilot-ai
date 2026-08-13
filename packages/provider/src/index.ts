@@ -1,2 +1,6 @@
 export * from "./types.js"
 export * from "./fake.js"
+export * from "./prompt.js"
+export * from "./claude.js"
+export * from "./fixtures.js"
+export * from "./test-support.js"
