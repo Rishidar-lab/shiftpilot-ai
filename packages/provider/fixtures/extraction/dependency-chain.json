@@ -1,0 +1,34 @@
+{
+  "name": "dependency-chain",
+  "source": "synthetic",
+  "note": "Ordering stated in prose, including a forward reference.",
+  "input": "Brief the new starter after the stocktake\nStocktake in the back room",
+  "output": {
+    "tasks": [
+      {
+        "title": "Brief the new starter",
+        "description": null,
+        "deadlineHint": null,
+        "estimatedMinutes": null,
+        "estimatedMinutesSource": null,
+        "explicitUrgency": null,
+        "category": "training",
+        "dependencies": ["#2"],
+        "ambiguity": [],
+        "sourceText": "Brief the new starter after the stocktake"
+      },
+      {
+        "title": "Stocktake in the back room",
+        "description": null,
+        "deadlineHint": null,
+        "estimatedMinutes": null,
+        "estimatedMinutesSource": null,
+        "explicitUrgency": null,
+        "category": "other",
+        "dependencies": [],
+        "ambiguity": [],
+        "sourceText": "Stocktake in the back room"
+      }
+    ]
+  }
+}

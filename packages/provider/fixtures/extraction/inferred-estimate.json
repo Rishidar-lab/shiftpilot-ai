@@ -1,0 +1,22 @@
+{
+  "name": "inferred-estimate",
+  "source": "synthetic",
+  "note": "No duration stated; the model offers one and marks it inferred.",
+  "input": "Deep clean the stockroom",
+  "output": {
+    "tasks": [
+      {
+        "title": "Deep clean the stockroom",
+        "description": null,
+        "deadlineHint": null,
+        "estimatedMinutes": 45,
+        "estimatedMinutesSource": "inferred",
+        "explicitUrgency": null,
+        "category": "other",
+        "dependencies": [],
+        "ambiguity": [],
+        "sourceText": "Deep clean the stockroom"
+      }
+    ]
+  }
+}

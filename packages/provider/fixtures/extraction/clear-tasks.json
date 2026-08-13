@@ -1,0 +1,46 @@
+{
+  "name": "clear-tasks",
+  "source": "synthetic",
+  "note": "Several unambiguous tasks, one with a stated deadline and duration.",
+  "input": "Restock aisle 3 by 2pm, 20 minutes\nCall Mrs Chen about her order\nCounts before close",
+  "output": {
+    "tasks": [
+      {
+        "title": "Restock aisle 3",
+        "description": null,
+        "deadlineHint": "by 2pm",
+        "estimatedMinutes": 20,
+        "estimatedMinutesSource": "stated",
+        "explicitUrgency": null,
+        "category": "other",
+        "dependencies": [],
+        "ambiguity": [],
+        "sourceText": "Restock aisle 3 by 2pm, 20 minutes"
+      },
+      {
+        "title": "Call Mrs Chen about her order",
+        "description": null,
+        "deadlineHint": null,
+        "estimatedMinutes": null,
+        "estimatedMinutesSource": null,
+        "explicitUrgency": null,
+        "category": "customer",
+        "dependencies": [],
+        "ambiguity": [],
+        "sourceText": "Call Mrs Chen about her order"
+      },
+      {
+        "title": "Do the counts",
+        "description": null,
+        "deadlineHint": "before close",
+        "estimatedMinutes": null,
+        "estimatedMinutesSource": null,
+        "explicitUrgency": null,
+        "category": "admin",
+        "dependencies": [],
+        "ambiguity": [],
+        "sourceText": "Counts before close"
+      }
+    ]
+  }
+}

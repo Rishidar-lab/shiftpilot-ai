@@ -1,0 +1,34 @@
+{
+  "name": "vague-and-ambiguous",
+  "source": "synthetic",
+  "note": "Vague request plus an unresolvable pronoun; nothing is invented.",
+  "input": "sort out the thing from yesterday\ncall him back",
+  "output": {
+    "tasks": [
+      {
+        "title": "Sort out the thing from yesterday",
+        "description": null,
+        "deadlineHint": null,
+        "estimatedMinutes": null,
+        "estimatedMinutesSource": null,
+        "explicitUrgency": null,
+        "category": null,
+        "dependencies": [],
+        "ambiguity": ["'the thing from yesterday' does not identify a specific task"],
+        "sourceText": "sort out the thing from yesterday"
+      },
+      {
+        "title": "Call him back",
+        "description": null,
+        "deadlineHint": null,
+        "estimatedMinutes": null,
+        "estimatedMinutesSource": null,
+        "explicitUrgency": null,
+        "category": null,
+        "dependencies": [],
+        "ambiguity": ["'him' does not identify a person"],
+        "sourceText": "call him back"
+      }
+    ]
+  }
+}

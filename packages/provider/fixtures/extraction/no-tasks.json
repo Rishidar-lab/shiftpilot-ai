@@ -1,0 +1,9 @@
+{
+  "name": "no-tasks",
+  "source": "synthetic",
+  "note": "Text with no actionable content: an empty list is the correct answer.",
+  "input": "weather was miserable today, the new coffee machine is great",
+  "output": {
+    "tasks": []
+  }
+}
