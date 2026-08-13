@@ -4,9 +4,12 @@ import { z } from "zod"
  * Single source of truth for data shapes shared across packages.
  *
  * M1: the domain model — entities, enums, derived projections
- * (plan / next / handover facts) and request DTOs. Schemas crossing API
- * boundaries are zod-validated at the request edge and in tests; the web
- * client (M4) decodes responses through the same schemas.
+ * (plan / next / handover facts) and request DTOs.
+ * M2: AI-assisted intake — RawInput lifecycle, the untrusted ExtractionCandidate
+ * contract, the normalized/reviewable ExtractionDraft + ExtractionReport, and
+ * the intake/approval request DTOs.
+ * Schemas crossing API boundaries are zod-validated at the request edge and in
+ * tests; the web client (M4) decodes responses through the same schemas.
  */
 
 // ---------------------------------------------------------------------------
@@ -292,6 +295,184 @@ export type UpdateTaskRequest = z.infer<typeof UpdateTaskRequest>
 
 export const BlockTaskRequest = z.object({ reason: z.string().min(1).max(500) }).strict()
 export type BlockTaskRequest = z.infer<typeof BlockTaskRequest>
+
+// ---------------------------------------------------------------------------
+// M2 — AI-assisted natural-language intake
+//
+// The boundary is strict: a worker types free text → it is persisted as a
+// RawInput BEFORE any AI call → the provider returns untrusted JSON → the
+// domain pipeline validates/normalizes it into reviewable ExtractionDrafts →
+// a human explicitly approves (or edits/rejects) each draft → only then does
+// it become an active M1 Task. The AI never mutates operational state directly.
+// ---------------------------------------------------------------------------
+
+/** Lifecycle of one natural-language intake, persisted before any AI call. */
+export const RawInputStatus = z.enum([
+  "received",
+  "processing",
+  "review_required",
+  "approved",
+  "partially_approved",
+  "failed",
+])
+export type RawInputStatus = z.infer<typeof RawInputStatus>
+
+/**
+ * A captured utterance plus the provenance of how it was processed.
+ * `provider`/`promptVersion` are recorded so every extraction is reproducible
+ * and auditable (docs/architecture.md §5). `failureKind` mirrors
+ * packages/provider's ProviderFailure kinds for clean mapping.
+ */
+export const RawInput = z
+  .object({
+    id: z.string().min(1),
+    shiftId: z.string().min(1),
+    rawText: z.string().min(1).max(20000),
+    status: RawInputStatus,
+    provider: z.string().min(1),
+    promptVersion: z.string().min(1),
+    createdAt: isoDatetime,
+    processedAt: isoDatetime.nullable(),
+    failureKind: z
+      .enum(["timeout", "rate_limited", "quota", "network", "invalid_response", "budget_exceeded"])
+      .nullable(),
+    failureMessage: z.string().max(1000).nullable(),
+  })
+  .strict()
+export type RawInput = z.infer<typeof RawInput>
+
+/**
+ * Machine-classified reason a candidate was rejected or flagged. Every value
+ * is deterministic and attributable (no model "confidence" scores).
+ */
+export const ExtractionRejectionReason = z.enum([
+  "invalid_deadline",
+  "deadline_before_shift",
+  "missing_title",
+  "duplicate_candidate",
+  "invalid_duration",
+  "ambiguous_dependency",
+  "unresolved_reference",
+  "oversized_input",
+  "malformed_provider_output",
+])
+export type ExtractionRejectionReason = z.infer<typeof ExtractionRejectionReason>
+
+/**
+ * The structured shape a provider is expected to emit for one candidate task.
+ * This is UNTRUSTED input: missing fields stay missing (we never fabricate),
+ * and the domain pipeline re-derives every operational field against policy.
+ */
+export const ExtractionCandidate = z
+  .object({
+    title: z.string().min(1).max(120),
+    description: z.string().max(2000).nullable(),
+    /** ISO datetime if the model inferred a deadline, else null. */
+    deadlineAt: isoDatetime.nullable(),
+    /** Whole minutes; null = unknown. The pipeline rejects out-of-range values. */
+    estimatedMinutes: z.number().int().nullable(),
+    explicitUrgency: UrgencyLevel.nullable(),
+    /** Operational category; null = classifier abstained. */
+    category: Category.nullable(),
+    /** References to sibling candidates, e.g. "#1", "the inspection above". */
+    dependencies: z.array(z.string().max(200)),
+    /** Model-flagged ambiguities (carried forward as review notes). */
+    ambiguity: z.array(z.string().max(500)),
+    /** The source span this candidate was extracted from (for audit/trace). */
+    sourceText: z.string().max(20000),
+  })
+  .strict()
+export type ExtractionCandidate = z.infer<typeof ExtractionCandidate>
+
+/** Envelope the provider should return; validated leniently by the pipeline. */
+export const AiExtractionOutput = z.object({ tasks: z.array(ExtractionCandidate) }).passthrough()
+export type AiExtractionOutput = z.infer<typeof AiExtractionOutput>
+
+/** One normalized, reviewable item produced by the domain pipeline. */
+export const ExtractionDraft = z
+  .object({
+    /** Stable id within the report (used by the approval workflow). */
+    id: z.string().min(1),
+    /** Original index of the source candidate in the provider output. */
+    index: z.number().int().min(0),
+    /** Pipeline verdict: ready / needs human eyes / rejected. */
+    disposition: z.enum(["accepted", "needsReview", "rejected"]),
+    title: z.string().min(1).max(120),
+    description: z.string().max(2000).nullable(),
+    category: Category.nullable(),
+    estimatedMinutes: z.number().int().min(1).max(480).nullable(),
+    deadlineAt: isoDatetime.nullable(),
+    deadlineSource: DeadlineSource,
+    explicitUrgency: UrgencyLevel,
+    /** Resolved/normalized dependency references for human confirmation. */
+    dependsOn: z.array(z.string().max(200)),
+    sourceText: z.string().max(20000),
+    /** Machine reasons: a rejection code, or review flags for needsReview. */
+    reasons: z.array(z.string().max(500)),
+  })
+  .strict()
+export type ExtractionDraft = z.infer<typeof ExtractionDraft>
+
+/**
+ * The full, deterministic output of the extraction pipeline for one RawInput.
+ * Never persisted as a unit that mutates state — it is the artifact a human
+ * reviews and approves.
+ */
+export const ExtractionReport = z
+  .object({
+    rawInputId: z.string().min(1),
+    provider: z.string().min(1),
+    promptVersion: z.string().min(1),
+    generatedAt: isoDatetime,
+    drafts: z.array(ExtractionDraft),
+    /** Report-level warnings (oversized input, partial malformed output, …). */
+    warnings: z.array(z.string().max(500)),
+  })
+  .strict()
+export type ExtractionReport = z.infer<typeof ExtractionReport>
+
+// Request DTOs ---------------------------------------------------------------
+
+/** Capture a worker's free-text intake for a shift. */
+export const CreateIntakeRequest = z
+  .object({
+    shiftId: z.string().min(1),
+    rawText: z.string().min(1).max(20000),
+    /** Optional explicit provider override; defaults to the configured provider. */
+    provider: z.enum(["fake", "claude"]).optional(),
+  })
+  .strict()
+export type CreateIntakeRequest = z.infer<typeof CreateIntakeRequest>
+
+/** A human's decision on a single draft during review/approval. */
+export const IntakeApprovalDecision = z
+  .object({
+    draftId: z.string().min(1),
+    action: z.enum(["approve", "reject"]),
+    /** Edits applied before promotion (validated like CreateTaskRequest). */
+    edits: z
+      .object({
+        title: z.string().min(1).max(120).optional(),
+        description: z.string().max(2000).nullable().optional(),
+        category: Category.optional(),
+        estimatedMinutes: z.number().int().min(1).max(480).nullable().optional(),
+        deadlineAt: isoDatetime.nullable().optional(),
+        explicitUrgency: UrgencyLevel.optional(),
+        dependsOn: z.array(z.string().max(50)).max(50).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+export type IntakeApprovalDecision = z.infer<typeof IntakeApprovalDecision>
+
+/** Approve (or reject) an intake report; promotes approved drafts to M1 Tasks. */
+export const ApproveIntakeRequest = z
+  .object({
+    decisions: z.array(IntakeApprovalDecision).min(1),
+  })
+  .strict()
+export type ApproveIntakeRequest = z.infer<typeof ApproveIntakeRequest>
 
 // ---------------------------------------------------------------------------
 // Envelope
