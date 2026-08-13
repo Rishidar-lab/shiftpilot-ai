@@ -1,1 +1,1 @@
-ALTER TABLE `raw_inputs` ADD `report_warnings` text NOT NULL;
+ALTER TABLE `raw_inputs` ADD `report_warnings` text DEFAULT '[]' NOT NULL;

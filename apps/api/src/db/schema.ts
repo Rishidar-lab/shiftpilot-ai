@@ -7,6 +7,8 @@ export const shifts = sqliteTable("shifts", {
   date: text("date").notNull(),
   startAt: text("start_at").notNull(),
   endAt: text("end_at").notNull(),
+  /** IANA zone the shift's wall-clock times mean (docs/architecture.md §4). */
+  timezone: text("timezone").notNull().default("UTC"),
   role: text("role"),
   createdAt: text("created_at").notNull(),
 })
@@ -58,8 +60,12 @@ export const rawInputs = sqliteTable(
     processedAt: text("processed_at"),
     failureKind: text("failure_kind"),
     failureMessage: text("failure_message"),
-    /** JSON-encoded string[] of report-level warnings (e.g. oversized input). */
-    reportWarnings: text("report_warnings").notNull(),
+    /**
+     * JSON-encoded string[] of report-level warnings (e.g. oversized input).
+     * Defaulted so the column can be added to a populated table: SQLite refuses
+     * `ADD COLUMN ... NOT NULL` without one (audit A-11).
+     */
+    reportWarnings: text("report_warnings").notNull().default("[]"),
   },
   (table) => [foreignKey({ columns: [table.shiftId], foreignColumns: [shifts.id] })],
 )
@@ -82,12 +88,16 @@ export const extractionDrafts = sqliteTable(
     estimatedMinutes: integer("estimated_minutes"),
     deadlineAt: text("deadline_at"),
     deadlineSource: text("deadline_source").notNull(),
+    /** The verbatim phrase the deadline was resolved from, for reviewer context. */
+    deadlineHint: text("deadline_hint"),
     explicitUrgency: text("explicit_urgency").notNull(),
     /** JSON-encoded string[] of dependency references (draft ids or raw text). */
     dependsOn: text("depends_on").notNull(),
     /** The source span this candidate was extracted from. */
     sourceText: text("source_text").notNull(),
-    /** JSON-encoded string[] of machine reasons / review notes. */
+    /** Stable ExtractionRejectionReason code when rejected; null otherwise. */
+    rejectionReason: text("rejection_reason"),
+    /** JSON-encoded string[] of human-readable review notes. */
     reasons: text("reasons").notNull(),
   },
   (table) => [
