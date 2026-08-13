@@ -401,6 +401,13 @@ export const ExtractionCandidate = z
     deadlineHint: z.string().max(200).nullable(),
     /** Whole minutes; null = unknown. The pipeline rejects out-of-range values. */
     estimatedMinutes: z.number().int().nullable(),
+    /**
+     * Where the duration came from. "stated" = the worker gave it; "inferred" =
+     * the model guessed a realistic value. Inference is permitted for duration
+     * ONLY, and must stay visibly distinguishable from what the worker actually
+     * said — a guess must never be presented as a fact (docs/architecture.md §5).
+     */
+    estimatedMinutesSource: z.enum(["stated", "inferred"]).nullable(),
     explicitUrgency: UrgencyLevel.nullable(),
     /** Operational category; null = classifier abstained. */
     category: Category.nullable(),
@@ -431,6 +438,11 @@ export const ExtractionDraft = z
     description: z.string().max(2000).nullable(),
     category: Category.nullable(),
     estimatedMinutes: z.number().int().min(1).max(480).nullable(),
+    /**
+     * Provenance of `estimatedMinutes`, surfaced in review so a reviewer can see
+     * at a glance which numbers the worker gave and which the model guessed.
+     */
+    estimateSource: z.enum(["stated", "inferred", "unknown"]),
     /** Resolved by domain normalization from `deadlineHint` — never by the model. */
     deadlineAt: isoDatetime.nullable(),
     deadlineSource: DeadlineSource,
@@ -529,6 +541,9 @@ export const HealthResponse = z
     provider: z.string(),
     providerLabel: z.string(),
     providerIsFake: z.boolean(),
+    /** Configured model identifier, or null for providers that use no model. */
+    model: z.string().nullable(),
+    promptVersion: z.string(),
     time: z.string(),
   })
   .strict()

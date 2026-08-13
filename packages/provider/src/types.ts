@@ -7,6 +7,10 @@ export type ProviderFailure =
   | { kind: "network"; message: string }
   | { kind: "invalid_response"; detail: string }
   | { kind: "budget_exceeded" }
+  /** Credentials rejected by the provider (401/403) — an operator problem. */
+  | { kind: "unauthorized" }
+  /** The request itself was rejected (bad model id, malformed request, 400/404). */
+  | { kind: "misconfigured"; detail: string }
 
 export type ExtractionAttempt = { ok: true; raw: unknown } | { ok: false; failure: ProviderFailure }
 
@@ -26,6 +30,8 @@ export interface AiProviderMeta {
    * must be labelled as simulated everywhere it is shown (docs/architecture.md §5).
    */
   isFake: boolean
+  /** Configured model identifier for diagnostics; null when no model is used. */
+  model: string | null
   promptId: string
   promptVersion: string
 }
