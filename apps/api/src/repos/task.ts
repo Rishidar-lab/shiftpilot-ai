@@ -18,6 +18,12 @@ export function insertTask(
   insertDependencies(db, row.id, dependsOn)
 }
 
+/** Insert only the task row (no dependency edges); used by the approval flow,
+ *  which creates every row first and resolves dependency edges in a second pass. */
+export function insertTaskRow(db: Database, row: typeof tasks.$inferInsert): void {
+  db.insert(tasks).values(row).run()
+}
+
 export function getTask(db: Database, id: string): TaskWithDeps | undefined {
   const row = db.select().from(tasks).where(eq(tasks.id, id)).get()
   if (row === undefined) return undefined
@@ -58,6 +64,10 @@ function insertDependencies(db: Database, id: string, dependsOn: string[]): void
     .values(unique.map((dependsOnId) => ({ taskId: id, dependsOnId })))
     .run()
 }
+
+/** Public so the approval use-case can resolve dependency edges after all
+ *  approved rows exist (avoids forward-reference FK violations). */
+export { insertDependencies }
 
 export function toTask({ row, dependsOn }: TaskWithDeps): Task {
   return Task.parse({ ...row, dependsOn })

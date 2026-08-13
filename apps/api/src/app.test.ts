@@ -4,11 +4,12 @@ import { HealthResponse } from "@shiftpilot/contracts"
 import { buildApp } from "./app.js"
 import { parseAppConfig } from "./config.js"
 import { openDatabase } from "./db/index.js"
+import { makeProvider } from "./ai.js"
 
 function makeTestApp() {
   const config = parseAppConfig({ NODE_ENV: "test" })
   const db = openDatabase(":memory:")
-  return { app: buildApp({ config, db }), db }
+  return { app: buildApp({ config, db, provider: makeProvider(config) }), db }
 }
 
 describe("GET /health", () => {

@@ -4,12 +4,13 @@ import { WorkPlan, HandoverFacts, NextDecision } from "@shiftpilot/contracts"
 import { buildApp } from "./app.js"
 import { parseAppConfig } from "./config.js"
 import { openDatabase } from "./db/index.js"
+import { makeProvider } from "./ai.js"
 import type { FastifyInstance, InjectOptions } from "fastify"
 
 function makeApp(): FastifyInstance {
   const config = parseAppConfig({ NODE_ENV: "test" })
   const db = openDatabase(":memory:")
-  return buildApp({ config, db })
+  return buildApp({ config, db, provider: makeProvider(config) })
 }
 
 const SHIFT = {

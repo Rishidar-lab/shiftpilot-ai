@@ -22,3 +22,15 @@ export class StateMachineError extends Error {
     this.name = "StateMachineError"
   }
 }
+
+/** Raised when the AI provider fails; mapped to a stable ai_* error code. */
+export class ProviderError extends Error {
+  constructor(
+    public readonly code: "ai_unavailable" | "ai_invalid_response" | "ai_budget_exceeded",
+    public readonly kind: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = "ProviderError"
+  }
+}

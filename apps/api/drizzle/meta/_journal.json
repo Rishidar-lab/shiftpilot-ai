@@ -8,6 +8,20 @@
       "when": 1786552989594,
       "tag": "0000_wise_annihilus",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786556211751,
+      "tag": "0001_thankful_dragon_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786556312134,
+      "tag": "0002_nifty_morbius",
+      "breakpoints": true
     }
   ]
 }

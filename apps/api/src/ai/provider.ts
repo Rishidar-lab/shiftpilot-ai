@@ -11,7 +11,7 @@ export function createAiProvider(config: AppConfig): AiProvider {
     case "fake":
       return new FakeAiProvider()
     case "claude":
-      // Cannot be reached: parseAppConfig already rejects claude until M2.
-      throw new Error("ClaudeProvider not implemented yet (M2).")
+      // Cannot be reached: parseAppConfig already rejects claude until M3.
+      throw new Error("claude provider not implemented — set AI_PROVIDER=fake")
   }
 }
