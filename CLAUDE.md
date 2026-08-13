@@ -23,8 +23,9 @@ Layered monorepo, dependencies point inward only:
   import contracts' zod schemas at runtime, because parsing untrusted provider output IS the
   trust boundary and belongs in the same pure pipeline.
 - `packages/provider` — AI boundary. `AiProvider` interface + `FakeAiProvider`
-  (deterministic, offline) + recorded fixtures. `ClaudeProvider` is NOT built yet (M3).
-  Nothing outside this package may import `@anthropic-ai/sdk`. Providers report language
+  (deterministic, offline) + `ClaudeProvider` (real, Anthropic SDK) + versioned prompt +
+  fixtures. Nothing outside this package may import `@anthropic-ai/sdk` — including tests,
+  which use the `claudeMessage` helper this package exports. Providers report language
   (including verbatim deadline phrases); they never compute instants or operational state.
 - `apps/api` — Fastify. Thin routes → use cases (orchestration) → domain + provider + repos.
   Drizzle + better-sqlite3 for persistence, drizzle-kit migrations.
@@ -100,6 +101,17 @@ and `.env.example`. Switching providers requires configuration, never code chang
   say so rather than implying one exists.
 - Provenance is a server fact: the recorded provider/prompt version comes from the
   provider's own metadata, never from the request body.
+- `ANTHROPIC_API_KEY` is server-side only and has no default. It is never logged, never
+  returned by any endpoint (health reports the model id and prompt version only), and never
+  committed. `AI_PROVIDER=claude` without a key and model is a boot failure, never a silent
+  downgrade to the fake provider.
+- Structured outputs are a constraint, not a guarantee: never remove zod or domain policy
+  because the provider claims a schema. `ExtractionCandidate` stays `.strict()` — fix the
+  prompt or the provider transformation, not the contract.
+- Scripts that spend money (`eval:claude`, `capture:fixtures`) must stay gated behind an
+  explicit opt-in flag and must never be reachable from `pnpm test` or CI.
+- A fixture is `"recorded"` only if a real API response produced it. Never relabel a
+  synthetic fixture, and never describe one as having come from a model.
 - Prompt-injection hardening: user text is demarked as data in the provider prompt and the
   output is constrained by a strict tool schema + whitelist; raw user text is escaped at
   render time in the web app (never injected as HTML).

@@ -128,16 +128,29 @@ heuristic) — simulated, not a real LLM"`, `promptVersion: "fake-1"`), `forcedF
   injection. `fake.test.ts`. `generateHandover` returns a deterministic summary; it is not
   yet called by any use case (AI handover prose is M3).
 
-### A-04 · ClaudeProvider (behind the interface) — **deferred to M3 (the remaining Week-1 blocker)**
+### A-04 · ClaudeProvider (behind the interface) — **implemented; live call outstanding**
 
-- Not implemented. `AI_PROVIDER=claude` is a boot-time error with a clear message. The
-  interface is ready and now carries an `AbortSignal` so the API's timeout can cancel a real
-  HTTP call; cost controls (rate limit, input cap, bounded timeout) are already in place at
-  the route. See `architecture.md §5` for the activation path.
+- `packages/provider/src/claude.ts` on the official Anthropic TypeScript SDK, behind the
+  unchanged `AiProvider` interface. Server-side only; `apps/web` does not depend on the
+  provider package. Structured output via `output_config.format`, full failure mapping,
+  AbortSignal-backed timeout, bounded retries (SDK backoff, no second layer), required
+  `ANTHROPIC_API_KEY` + `ANTHROPIC_MODEL` with no in-code model default, fail-fast boot and
+  no silent fallback to the fake provider.
+- `packages/provider/src/prompt.ts` — versioned prompt (`shiftpilot.task-extract` /
+  `claude-1`) with the JSON output contract; both ids persisted per intake.
+- **Outstanding: no live API call has been made.** Fixtures are all synthetic and no observed
+  extraction outcomes are recorded. `pnpm eval:claude` (gated by `ANTHROPIC_LIVE=1`) produces
+  that evidence once credentials exist.
 
-### A-05 / A-06 · Recorded fixtures + gated live test — **deferred to M3**
+### A-05 / A-06 · Recorded fixtures + gated live test — **tooling done, recordings outstanding**
 
-- No live SDK dependency yet; the `FakeAiProvider` path is fully tested offline.
+- `packages/provider/fixtures/` with a loader and an integrity test asserting provenance
+  labelling, contract conformance, absence of credential-shaped material, and that no fixture
+  contains a resolved instant where a verbatim hint belongs. All six shipped fixtures are
+  labelled `"synthetic"` — hand-written to the contract, **not** captured from a model.
+- `pnpm capture:fixtures` records real responses as `"recorded"` fixtures (with model, prompt
+  version and timestamp); `pnpm eval:claude` runs the 16-case corpus in
+  `apps/api/src/eval/corpus.ts`. Both refuse to run without `ANTHROPIC_LIVE=1`.
 
 ### Intake API + persistence + UI — **done (was M3 P-0x)**
 
@@ -181,6 +194,14 @@ An adversarial audit of M0–M2 found 28 findings. Fixed in Phase B:
 
 Still open after Phase B: A-01 (no real AI integration — M3), coverage thresholds (H-01),
 demo script + seed (H-02), and everything listed under M3/M4/M5 below.
+
+## Phase C — real Claude provider (2026-08-13)
+
+Implemented the ClaudeProvider, the versioned prompt, structured output, failure mapping,
+estimate provenance, fixtures, the evaluation corpus and gated live tooling — see A-04/A-05
+above. **A-01 remains open**: no live Claude request has been made from this repository, so
+the Week-1 "real AI integration" requirement is not yet demonstrated. Everything needed to
+demonstrate it is in place and gated behind credentials.
 
 ## M3 — Handover persistence + live `claude` provider (remaining)
 

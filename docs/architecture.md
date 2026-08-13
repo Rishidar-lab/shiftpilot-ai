@@ -1,6 +1,6 @@
 # SHIFT PILOT — Architecture
 
-Status: M2 implemented (AI intake + review) + Phase-B audit remediation · Last updated: 2026-08-13
+Status: M3 in progress (Claude provider implemented, live call not yet made) · Last updated: 2026-08-13
 Companion docs: `../CLAUDE.md` (rules), `./implementation-plan.md` (tasks).
 
 ---
@@ -291,7 +291,7 @@ interface AiProvider {
 `signal` exists so the API's timeout can **abort** an in-flight request instead of merely
 giving up on it — an unaborted call keeps spending quota after we stop caring.
 
-One implementation today:
+Two implementations:
 
 - **`FakeAiProvider`** — deterministic regex/heuristic extractor (line splitting, category
   and urgency keywords, duration parsing, `#n` + free-text dependency references). It
@@ -304,9 +304,56 @@ One implementation today:
   `forcedFailure` injection for testing the failure path. It is a full implementation, not a
   stub: dev/demo/tests exercise the real extraction + review pipeline end-to-end offline.
 
-The `claude` provider is **not** implemented (it lands in M3). The env still accepts
-`AI_PROVIDER=fake|claude` via zod-validated env (`apps/api/src/config.ts`), but selecting
-`claude` is a **boot-time error** with a clear message.
+- **`ClaudeProvider`** (`packages/provider/src/claude.ts`) — the real provider, built on the
+  official Anthropic TypeScript SDK. It is an adapter and nothing more: it sends the
+  versioned prompt plus the worker's text and returns whatever JSON came back as untrusted
+  `raw`. It does no date arithmetic, applies no domain policy, and has no authority over
+  application state. `isFake: false`, `model` is the configured identifier, and
+  `promptVersion` identifies the exact instructions used.
+
+**Structured output, still untrusted.** The request pins `output_config.format` to a JSON
+schema mirroring `ExtractionCandidate`, which is the strongest practical constraint the SDK
+offers. The response nonetheless passes the entire §6 pipeline unchanged — the schema is a
+way to get well-shaped input more often, not a reason to stop validating. `ExtractionCandidate`
+stays `.strict()`: an unexpected field is a per-candidate rejection, not a weakened contract.
+
+**Handled response failures:** safety refusal (`stop_reason: "refusal"`), truncation
+(`max_tokens`), empty body, non-JSON text, plus the transport failures below. Each becomes a
+typed `ProviderFailure`, never an exception and never a partially-parsed object.
+
+**Failure mapping** (SDK error → `ProviderFailure` → API code):
+
+| SDK error                                                         | Failure                          | API                       |
+| ----------------------------------------------------------------- | -------------------------------- | ------------------------- |
+| `APIConnectionTimeoutError`, `APIUserAbortError`                  | `timeout`                        | 503 `ai_unavailable`      |
+| `RateLimitError` (429)                                            | `rate_limited` (+`retryAfterMs`) | 503 `ai_unavailable`      |
+| `AuthenticationError` (401), `PermissionDeniedError` (403)        | `unauthorized`                   | 503 `ai_unavailable`      |
+| 400/403 with a `billing_error` type                               | `quota`                          | 402 `ai_budget_exceeded`  |
+| `BadRequestError` (400), `NotFoundError` (404, e.g. bad model id) | `misconfigured`                  | 503 `ai_unavailable`      |
+| `APIConnectionError`, 5xx/529, anything unrecognised              | `network`                        | 503 `ai_unavailable`      |
+| refusal / truncation / empty / non-JSON                           | `invalid_response`               | 502 `ai_invalid_response` |
+
+Operator-caused failures (`unauthorized`, `misconfigured`) surface as "the AI provider is not
+correctly configured on the server" — the provider's own message is not echoed to the client.
+
+**Configuration** (`apps/api/src/config.ts`, all fail-fast at boot): `ANTHROPIC_API_KEY` and
+`ANTHROPIC_MODEL` are **required** when `AI_PROVIDER=claude` and have no defaults;
+`ANTHROPIC_MAX_OUTPUT_TOKENS`, `ANTHROPIC_MAX_RETRIES` and an optional `ANTHROPIC_EFFORT`
+tune cost. Selecting `claude` without credentials refuses to start rather than degrading to
+the offline provider — a silent downgrade would let simulated output pass for a model's.
+
+### Prompt versioning
+
+The prompt lives in `packages/provider/src/prompt.ts`, never inline at a call site, and
+exports `EXTRACTION_PROMPT_ID` + `EXTRACTION_PROMPT_VERSION` (`claude-1`). Both are persisted
+on every `raw_inputs` row, so any extraction can be traced to the exact instructions and
+output contract that produced it. The version bumps on any change to either.
+
+The prompt states the contract, not the domain rules: it deliberately does not describe
+priority weights or deadline vocabulary, which would invite the model to pre-compute things
+the domain owns. It requires verbatim deadline phrases, permits duration inference **only**
+when flagged as inferred, and treats the worker's text as data — but the application is
+correct even when the model ignores all of it.
 This keeps the contract surface honest: there is no code path that silently pretends to be
 Claude. The `AiProvider` interface and `ShiftContext` are structured so a real provider can
 be dropped in later without touching the domain, the API, or the UI.
@@ -322,15 +369,23 @@ be dropped in later without touching the domain, the API, or the UI.
 - Raw user text is never interpolated into a free-text generation target and never rendered
   as HTML in the web app (escape at render).
 
-### Live activation (documented path, for later)
+### Live activation status
 
-1. Implement a `ClaudeAiProvider` against the existing `AiProvider` interface (tool-use
-   structured output whose argument schema is the contracts schema from §6).
-2. Gate it behind `AI_PROVIDER=claude` + `ANTHROPIC_API_KEY` in a local `.env` (never in repo).
-3. Add a **recorded fixtures** contract test (gated by `ANTHROPIC_LIVE=1`, never in CI)
-   asserting real responses pass the §6 pipeline.
-4. `FakeAiProvider` remains the default for CI, dev, and demos. There is no code path that
-   requires a key for the product to work.
+Implemented: the provider, the versioned prompt, structured output, failure mapping, cost
+controls, offline contract tests, an evaluation corpus and gated tooling.
+
+**Not yet done: an actual API call.** No live Claude request has been made from this
+repository, so every fixture is labelled `"source": "synthetic"` and no observed extraction
+outcomes are recorded. Producing that evidence requires credentials:
+
+```sh
+ANTHROPIC_LIVE=1 ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=<id> pnpm eval:claude
+ANTHROPIC_LIVE=1 ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=<id> pnpm capture:fixtures
+```
+
+Both refuse to run without the explicit opt-in flag, so neither `pnpm test` nor CI can ever
+trigger a paid call. `FakeAiProvider` remains the default for CI, dev and demos: no code path
+requires a key for the product to work.
 
 ## 6. Structured-output validation (the trust boundary)
 
