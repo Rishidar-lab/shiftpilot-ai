@@ -1,6 +1,6 @@
 # SHIFT PILOT — Implementation Plan
 
-Status: Week 1 baseline · Target: complete, tested, demoable MVP within the week
+Status: M2 complete (AI intake + review + approve) · Target: complete, tested, demoable MVP
 Milestones: M0–M5. Every issue below is GitHub-sized (≤ ~1 day, ≤ ~400 changed lines,
 one concern, mergeable independently).
 
@@ -97,58 +97,60 @@ one concern, mergeable independently).
 
 ---
 
-## M2 — Provider + validation pipeline (Day 3)
+## M2 — Provider + validation pipeline + intake API + review UI (as-built)
 
-### A-01 · AiProvider interface + failure types
+> **Status (2026-08-12):** A-01, A-02, A-03, and the M3 intake/persistence/API/UI work were
+> built together as one milestone (capture → extract → review → approve). The `claude`
+> provider (A-04) and the live-fixture/drift test (A-05/A-06) are **deferred to M3** — the
+> `AiProvider` interface and `ShiftContext` are shaped so a real provider drops in later with
+> zero changes to domain/API/UI.
 
-- **Scope**: `packages/provider`: interface + `ProviderFailure` union (§5); `ProviderError`
-  mapping helpers; no SDK imports yet.
-- **Acceptance**: compiles; failure types exhaustive in match tests.
-- **Done when**: typed, covered.
+### A-01 · AiProvider interface + failure types — **done**
 
-### A-02 · Validation pipeline (parse → zod → policy → normalize)
+- `packages/provider/src/types.ts`: interface + `ProviderFailure` union (§5) + `AiProviderMeta`
+  (`id`, `label`, `isFake`, `promptVersion`). No SDK imports.
 
-- **Scope**: the §6 pipeline as pure functions with `ExtractionOutcome`/
-  `ExtractionReport`; retry-with-feedback orchestration (≤2) lives here too.
-- **Acceptance**: fixture corpus `apps/api/fixtures/extraction/` all green; per-task skips
-  produce reasons; full-shape failures retry then fail cleanly.
-- **Done when**: ≥90% coverage on pipeline.
+### A-02 · Validation pipeline (parse → zod → policy → normalize → dedupe → resolve) — **done**
 
-### A-03 · FakeProvider (deterministic offline implementation)
+- Implemented as `runExtraction(req)` in **`packages/domain/src/extraction.ts`** (pure, zero
+  runtime deps). `extraction.test.ts` (13 cases) covers valid/empty/garbage JSON, unknown
+  keys, >25 tasks, duplicates, dependency resolve/ambiguous, policy rejections, warnings.
 
-- **Scope**: heuristic extractor (line splitting, keyword categories, vocabulary deadlines)
-  implementing `AiProvider`; composeHandover template mode.
-- **Acceptance**: end-to-end app works with `AI_PROVIDER=fake`; tests use it as the real
-  implementation.
-- **Done when**: demo-able offline; no stubs.
+### A-03 · FakeAiProvider (deterministic offline implementation) — **done**
 
-### A-04 · ClaudeProvider (behind the interface, offline-untestable by design)
+- `packages/provider/src/fake.ts`: heuristic extractor (line/sentence splitting, keyword
+  categories, vocabulary deadlines, `#n` + free-text dependency parsing, ambiguity flags),
+  `meta()` is honest (`isFake: true`, label `"Fake (offline heuristic) — simulated, not a real
+LLM"`, `promptVersion: "fake-1"`), `forcedFailure` injection. `fake.test.ts` (12 cases). No
+  `composeHandover` (handover is M3).
 
-- **Scope**: `@anthropic-ai/sdk` wiring, tool-use `submit_extraction` w/ JSON-Schema-derived
-  arg schema, forced tool choice, temperature 0, `max_tokens` caps, timeout+Abort, retry/
-  backoff 429/5xx, env read via injected config (no direct `process.env`).
-- **Acceptance**: unit tests cover retry policy/timeout with mocked client; live call NOT
-  executed.
-- **Done when**: code-review-ready, documented activation (`ANTHROPIC_LIVE` gate in A-06).
+### A-04 · ClaudeProvider (behind the interface) — **deferred to M3**
 
-### A-05 · Recorded fixtures + contract tests (drift detector)
+- Not implemented. `AI_PROVIDER=claude` is a boot-time error with a clear message. Interface
+  is ready; see `architecture.md §5` for the activation path.
 
-- **Scope**: `fixtures/anthropic/*.json` shaped like real Claude tool responses (valid-rich,
-  unknown keys, truncated, shape-broken); tests: every fixture through pipeline +
-  `RecordingProvider`.
-- **Acceptance**: contract tests green offline; fixture failing = prompt/schema drift alarm.
-- **Done when**: fixture corpus covers all §6 stages.
+### A-05 / A-06 · Recorded fixtures + gated live test — **deferred to M3**
 
-### A-06 · Gated live integration test
+- No live SDK dependency yet; the `FakeAiProvider` path is fully tested offline.
 
-- **Scope**: `pnpm test:live` (test files under `apps/api/test/live/`, skipped unless
-  `ANTHROPIC_LIVE=1`), never wired into `pnpm test`/CI.
-- **Acceptance**: `pnpm test` ignores it; documented in README how to activate.
-- **Done when**: skipped-by-default verified.
+### Intake API + persistence + UI — **done (was M3 P-0x)**
+
+- `raw_inputs` + `extraction_drafts` Drizzle tables + migrations `0001`/`0002`.
+- `use-cases/intake.ts`: `captureIntake` (persists `raw_inputs` **before** provider call,
+  timeout-wrapped → `ProviderError`), `getIntake`, `approveIntake` (transaction: drafts → M1
+  `Task` + dependency resolution). `routes/intake.ts`, `errors.ts` (`ProviderError` →
+  503/502/402), `ai.ts` factory. `intake.test.ts` (10 cases).
+- Web: `api/client.ts` (zod decode at boundary, `IntakeResult`/`ApprovalResult`),
+  `use-async.ts`, `IntakeView` (extract → editable review cards → approve), `PlanView`,
+  `HandoverView`, `FakeProviderBadge`; `App.tsx` tabs + shift list.
 
 ---
 
-## M3 — Persistence + API (Day 4)
+## M3 — Handover persistence + live `claude` provider (remaining)
+
+> Intake persistence + API + UI were completed as part of M2 (see M2 tail). M3 now covers the
+> remaining items: handover storage, the real `claude` provider behind the existing interface,
+> and the recorded-fixture/drift contract tests (A-04/A-05/A-06).
 
 ### P-01 · DB schema + migrations (Drizzle/better-sqlite3)
 

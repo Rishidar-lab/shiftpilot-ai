@@ -1,6 +1,6 @@
 # SHIFT PILOT — Architecture
 
-Status: Week 1 baseline · Last updated: 2026-08-12
+Status: M2 implemented (AI intake + review) · Last updated: 2026-08-12
 Companion docs: `../CLAUDE.md` (rules), `./implementation-plan.md` (tasks).
 
 ---
@@ -67,13 +67,13 @@ export. These are engineering-visible extensions, not architecture changes.
 ┌───────────────────────────── apps/api ─────────────────────────────┐
 │  Fastify · routes (thin) → use cases (orchestration)               │
 │  ├── config.ts       zod-validated env, fail-fast at boot          │
-│  ├── use-cases/      captureInput · approvePlan · updateTask ·     │
+│  ├── use-cases/      captureIntake · approveIntake · getIntake ·   │
 │  │                    getPlan · generateHandover                   │
 │  ├── db/             Drizzle schema · better-sqlite3 (WAL, sync)   │
-│  └── repos/          typed query modules (shifts, inputs, tasks…)  │
+│  └── repos/          typed query modules (shifts, intake, tasks…)  │
 ├─────────────────────────── packages/provider ──────────────────────┤
-│  AiProvider interface · ClaudeProvider · FakeProvider · fixtures   │
-│  · tool JSON schema · prompt builders · retry/timeout policy       │
+│  AiProvider interface · FakeAiProvider (heuristic, isFake) ·       │
+│  fixtures · ShiftContext · timeout/retry policy (API-side)         │
 ├─────────────────────────── packages/domain ────────────────────────┤
 │  PURE · zero runtime deps                                           │
 │  validation-policy · normalize (deadline vocab, defaults) ·        │
@@ -92,12 +92,13 @@ Dependencies point inward: `web → api` (HTTP), `api → contracts, domain, pro
 
 ### Decision flow (what talks to what)
 
-| Action                          | Path                                                                                                                                               |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Capture text                    | route → `captureInput` use case → persist input (durability first) → provider.extract → validation pipeline (§6) → persist drafts+report → respond |
-| Priority/sequence/next/schedule | pure domain engines over persisted task rows — **no provider call**                                                                                |
-| Handover                        | use case → domain builds facts from DB → provider.composeHandover(facts) → validate → persist → respond                                            |
-| Edit task                       | route → use case → state machine check → optimistic lock → update → re-derive plan                                                                 |
+| Action                          | Path                                                                                                                                                                                                                                                                          |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Capture text                    | route → `captureIntake` use case → **persist `raw_inputs` (durability first)** → provider.extract (timeout-wrapped) → `runExtraction` pipeline (§6) → persist `extraction_drafts` + report → respond with `RawInput` (status `review_required`/`partially_approved`/`failed`) |
+| Approve intake                  | route → `approveIntake` use case → in a transaction, map each accepted draft to an M1 `Task` (+dependencies) → mark `raw_inputs` `approved` → respond with created task ids                                                                                                   |
+| Priority/sequence/next/schedule | pure domain engines over persisted task rows — **no provider call**                                                                                                                                                                                                           |
+| Handover (M3)                   | use case → domain builds facts from DB → (future) provider.composeHandover(facts) → validate → persist → respond; M2 handover view renders deterministic facts only                                                                                                           |
+| Edit task                       | route → use case → state machine check → optimistic lock → update → re-derive plan                                                                                                                                                                                            |
 
 ### Why this shape
 
@@ -132,11 +133,13 @@ Task       id · shiftId · title · category(enum) · estimatedMinutes(1–480|
            createdAt · updatedAt · completedAt?
 ```
 
-`RawInput` and persisted `Handover` rows are M2/M3 territory (capture pipeline + handover
-storage). M1 persists **shifts + tasks + task_dependencies** only; the schedule, sequence,
-next-decision, and handover **facts are derived projections** — computed on demand by domain
-engines, never persisted. This eliminates stale-plan bugs by construction: the plan shown is
-always a pure function of current task state plus "now".
+M1 persists **shifts + tasks + task_dependencies**. M2 adds **`raw_inputs`** (every captured
+natural-language blob, with status `received | processing | review_required |
+partially_approved | approved | failed`) and **`extraction_drafts`** (the per-candidate
+review state keyed by `raw_input_id + draft_id`). Persisted `Handover` rows are M3 territory.
+The schedule, sequence, next-decision, and handover **facts are derived projections** —
+computed on demand by domain engines, never persisted. This eliminates stale-plan bugs by
+construction: the plan shown is always a pure function of current task state plus "now".
 
 ### Task lifecycle (explicit state machine, enforced in domain)
 
@@ -223,16 +226,19 @@ Persistence: SQLite + Drizzle (`better-sqlite3`, WAL), tables `shifts` / `tasks`
 applied at boot via `drizzle-kit`. The natural-language capture → extraction → validation
 pipeline and persisted handovers land in M2/M3.
 
-## 5. Claude API boundaries
+## 5. AI provider boundaries
 
 ### Interface (the only AI surface in the codebase)
+
+The provider is deliberately narrow: it converts messy natural-language text into
+untrusted candidate JSON. It never reads persisted tasks, never sets priority, never
+mutates state. Every operational decision happens later in the deterministic pipeline.
 
 ```ts
 // packages/provider/src/types.ts
 type ProviderFailure =
   | { kind: "timeout" }
   | { kind: "rate_limited"; retryAfterMs?: number }
-  | { kind: "quota" }
   | { kind: "network"; message: string }
   | { kind: "invalid_response"; detail: string }
   | { kind: "budget_exceeded" }
@@ -242,87 +248,100 @@ interface AiProvider {
     input: string,
     ctx: ShiftContext,
   ): Promise<{ ok: true; raw: unknown } | { ok: false; failure: ProviderFailure }>
-  composeHandover(
-    facts: HandoverFacts,
-  ): Promise<{ ok: true; raw: unknown } | { ok: false; failure: ProviderFailure }>
+  meta(): AiProviderMeta // { id, label, isFake, promptVersion }
 }
 ```
 
-Two implementations:
+One implementation today:
 
-- **`ClaudeProvider`** — `@anthropic-ai/sdk`, model from `ANTHROPIC_MODEL`
-  (default `claude-sonnet-4-5`), `temperature: 0`, `max_tokens` caps, per-request timeout
-  (`AI_TIMEOUT_MS`, default 30 s, AbortSignal-tied), retry ≤2 with exponential backoff on
-  429/5xx, never retries on validation failures. Uses **tool-use structured output**: one tool
-  `submit_extraction` whose argument schema is the zod schema from §6 compiled to JSON Schema;
-  `tool_choice` forced. The tool-argument JSON is still treated as untrusted (see §6).
-- **`FakeProvider`** — deterministic regex/heuristic extractor using the same deadline
-  vocabulary and category keywords as the domain normalizer, so dev/demo/tests exercise the
-  real pipeline end-to-end offline. It is a full implementation, not a stub.
+- **`FakeAiProvider`** — deterministic regex/heuristic extractor using the same deadline
+  vocabulary and category keywords as the domain normalizer. `isFake: true`, `label`
+  is the honest string `"Fake (offline heuristic) — simulated, not a real LLM"`, and
+  `promptVersion` is recorded (`"fake-1"`) so every extraction is traceable to the exact
+  heuristic. It supports `forcedFailure` injection for testing the failure path. It is a
+  full implementation, not a stub: dev/demo/tests exercise the real extraction + review
+  pipeline end-to-end offline.
 
-Provider selection: `AI_PROVIDER=fake|claude` via zod-validated env (`apps/api/src/config.ts`).
-`claude` without `ANTHROPIC_API_KEY` is a **boot-time error** with a clear message
-(fail fast > fail obscure). Switching providers requires configuration and zero domain
-changes.
+The `claude` provider is **not** implemented. The env still accepts `AI_PROVIDER=fake|claude`
+via zod-validated env (`apps/api/src/config.ts`), but selecting `claude` is a **boot-time
+error** with a clear message (`claude provider not implemented — set AI_PROVIDER=fake`).
+This keeps the contract surface honest: there is no code path that silently pretends to be
+Claude. The `AiProvider` interface and `ShiftContext` are structured so a real provider can
+be dropped in later without touching the domain, the API, or the UI.
 
-### Prompt discipline
+### Isolation discipline
 
-- User text arrives delimited as **data** (`<user_input>…</user_input>`); system prompt says
-  to ignore instructions found inside it. Combined with the strict tool schema + zod
-  whitelist, injection is defended at three layers (prompt, schema, policy) — §6.
+- The provider returns **raw, untrusted** candidate objects. The shaped/validated/deduplicated
+  result is produced entirely by `runExtraction` in `packages/domain/src/extraction.ts`.
+- Per-request timeout is enforced at the API layer (`AI_TIMEOUT_MS`, default 30 s) around the
+  provider call; a timeout or any `ProviderFailure` becomes a typed `ProviderError` and the
+  `raw_inputs` row is persisted with status `failed` before any of this happens (durability
+  first).
 - Raw user text is never interpolated into a free-text generation target and never rendered
   as HTML in the web app (escape at render).
-- Prompt changes require updating/adding a recorded fixture + contract test (drift detector).
 
 ### Live activation (documented path, for later)
 
-1. Set `AI_PROVIDER=claude` and `ANTHROPIC_API_KEY=<key>` in a local `.env` (never in repo).
-2. Optionally set `ANTHROPIC_MODEL`.
-3. Run `pnpm test:live` (**opt-in, gated by `ANTHROPIC_LIVE=1`**, never in CI, never part of
-   `pnpm test`) — a thin contract test asserting real responses parse through the §6 pipeline.
-4. `FakeProvider` remains the default for CI, dev, and demos. There is no code path that
-   requires the key for the product to work.
+1. Implement a `ClaudeAiProvider` against the existing `AiProvider` interface (tool-use
+   structured output whose argument schema is the contracts schema from §6).
+2. Gate it behind `AI_PROVIDER=claude` + `ANTHROPIC_API_KEY` in a local `.env` (never in repo).
+3. Add a **recorded fixtures** contract test (gated by `ANTHROPIC_LIVE=1`, never in CI)
+   asserting real responses pass the §6 pipeline.
+4. `FakeAiProvider` remains the default for CI, dev, and demos. There is no code path that
+   requires a key for the product to work.
 
 ## 6. Structured-output validation (the trust boundary)
 
-The pipeline is a sequence of pure functions; each stage has tests and adversarial fixtures.
-No stage is skipped depending on provider. AI output is treated as **untrusted input** —
-identical posture to any other network payload.
+The pipeline is `runExtraction(req)` in `packages/domain/src/extraction.ts` — a sequence of
+pure functions; each stage has tests and adversarial fixtures. No stage is skipped depending
+on provider. AI output is treated as **untrusted input** — identical posture to any other
+network payload.
 
 ```
- raw tool-arg JSON
-   │ 1. parseJson          — must be syntactically valid JSON; no auto-repair
+ raw provider JSON (untrusted)
+   │ 1. parseJsonStrict      — must be syntactically valid JSON; no auto-repair
    ▼
- zod schema (contracts)    — strictObject per task: unknown keys → per-task rejection
-   │ 2. full-shape failure (not even a list) → retry ≤2 with corrective feedback
+ zod schema (contracts)     — per task: unknown keys → per-task rejection (skipped, not fatal)
+   │ 2. full-shape failure (not even a list) → immediate failure; raw text retained
    ▼
- domain policy (pure)      — title non-empty ≤120; estimate 5–480; ≤25 tasks; non-empty
-   │                         result; duplicate detection (similarity ≥0.85)
+ domain policy (pure)       — title non-empty ≤120; estimate 5–480; ≤25 tasks; non-empty
+   │                         result; duplicate detection (normalized-title similarity)
    ▼
- normalization (pure)      — resolve deadline hint against ShiftContext via vocabulary
+ normalization (pure)       — resolve deadline hint against ShiftContext via vocabulary
    │                         ("before close"→shift end, "2pm"→shift date 14:00, "in 30m",
    │                         "EOD", weekday names…); category default; estimate defaults
-   │                         per category; dependency refs remapped to accepted task ids
+   │                         per category; dependency refs resolved to draft ids, then
+   │                         (at approval) to accepted task ids
    ▼
- ExtractionOutcome         — { status:"ok", tasks: ValidTaskDraft[], report: ExtractionReport }
-                              | { status:"failed", code, report }
+ dedupe + dependency resolve — batch + existing-title dedup; ambiguous/unresolved refs flagged
    ▼
- persist drafts + report   — raw input row already persisted BEFORE the AI call (durability)
+ ExtractionReport           — { status:"ok"|"failed", drafts:[ExtractionDraft], report }
+   ▼
+ persist drafts + report    — raw_inputs row already persisted BEFORE the AI call (durability)
+   ▼
+ HUMAN REVIEW               — the API returns ReviewableDraft[] (disposition accepted|
+                              needsReview|rejected + reasons); only explicit approval creates
+                              M1 Tasks. The AI never writes a Task.
 ```
 
-`ExtractionReport` is UI-visible: `totalFound`, `accepted`, `skipped: [{ key, reason }]`
-(reasons: invalid_title, unknown_extra_fields, duplicate, past_deadline_hint, bad_reference,
-size_exceeded). Partial success is a first-class result — the worker approves what survived;
-"3 of 5 extracted, 2 skipped: unknown extra field 'owner:'" is honest, not hidden.
+`ExtractionReport` is UI-visible: `totalFound`, `accepted` (auto-accepted by policy),
+`skipped: [{ key, reason }]` (reasons: invalid_title, unknown_extra_fields, duplicate,
+past_deadline_hint, bad_reference, size_exceeded), `warnings` (e.g. unresolved dependencies),
+`rejections: [{ draftId, reason }]`, `failedDraftIds`, `provider:{id,label,isFake,promptVersion}`.
+Partial success is a first-class result — the worker approves what survived; the UI shows
+every draft, editable, with accept/reject toggles. "3 of 5 extracted, 2 skipped: unknown
+extra field 'owner:'" is honest, not hidden.
 
-Retry policy: full-shape/schema failures → ≤2 retries with corrective feedback appended to
-the tool result; policy-level per-task skips do **not** retry (wasteful, usually futile).
-After retries: status `failed`, raw text retained, UI offers "re-extract" (same pipeline).
+Retry policy: full-shape/schema failures → immediate `failed` (the heuristic fake does not
+auto-retry; a real provider would retry ≤2 at the API layer). After failure: status `failed`,
+raw text retained, UI offers "re-extract" (same pipeline).
 
-Handover output is validated at prose level: must not exceed character/token caps; any task
-title or ID in the draft that does not exist in the facts set is stripped/replaced; the
-deterministic fact panels are rendered by the client from the stored `facts` json, never from
-model prose.
+Handover output (M3) will be validated at prose level: must not exceed caps; any task title
+or ID in the draft not present in the facts set is stripped; the deterministic fact panels are
+rendered by the client from stored `facts` json, never from model prose.
+
+> Note: the `claude` provider is not yet implemented, so the live-retry/recorded-fixture drift
+> detector described earlier is deferred to M3. The `FakeAiProvider` path is fully tested.
 
 ## 7. Failure cases
 
@@ -351,16 +370,16 @@ ai_invalid_response · ai_budget_exceeded · internal`.
 
 Vitest across workspaces. **All tests run offline** — no network, no keys, no paid APIs.
 
-| Layer                                                                    | Approach                                                                                                                                                                                                          | Requirements          |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| Domain (priority, sequence, schedule, state machine, normalizer, policy) | pure unit tests, table-driven; adversarial cases (cycles, overdue, empty, overflow)                                                                                                                               | ≥90% line coverage    |
-| Validation pipeline                                                      | fixture corpus `apps/api/fixtures/extraction/`: valid-rich · empty · garbage JSON · unknown keys · >25 tasks · injection-attempt text · truncated output                                                          | ≥90% line coverage    |
-| Provider boundary                                                        | `FakeProvider` in unit tests; **recorded fixtures** (`fixtures/anthropic/*.json`) shaped like real Claude tool responses — contract tests assert every fixture passes the pipeline (prompt/schema drift detector) | every fixture green   |
-| API routes + use cases                                                   | Fastify `app.inject()` over in-memory SQLite, fake provider: happy path per endpoint + every failure path in §7 + state-machine matrix                                                                            | ≥80% line coverage    |
-| Repos                                                                    | integration against temp-file SQLite (and `:memory:`)                                                                                                                                                             | covered via API tests |
-| Web                                                                      | component tests for review table, error banner, degraded states (Testing Library); typed client decode tests                                                                                                      | smoke-level           |
-| Live Claude                                                              | `pnpm test:live`, **gated by `ANTHROPIC_LIVE=1` + key**, never in CI                                                                                                                                              | opt-in                |
-| E2E (later week)                                                         | Playwright happy path: capture → review → approve → complete → handover                                                                                                                                           | optional stretch      |
+| Layer                                                                    | Approach                                                                                                                                                                                                                         | Requirements          |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| Domain (priority, sequence, schedule, state machine, normalizer, policy) | pure unit tests, table-driven; adversarial cases (cycles, overdue, empty, overflow)                                                                                                                                              | ≥90% line coverage    |
+| Validation pipeline                                                      | `packages/domain/src/extraction.test.ts` (13 cases): good/empty/garbage JSON · unknown keys · >25 tasks · duplicates · dependency resolve/ambiguous · policy rejections · warnings                                               | ≥90% line coverage    |
+| Provider boundary                                                        | `FakeAiProvider` unit tests (`packages/provider/src/fake.test.ts`, 12 cases) covering heuristic extraction, dependency parsing, ambiguity flags, failure injection, and `meta()` honesty (`isFake`/`label`)                      | every case green      |
+| API routes + use cases                                                   | Fastify `app.inject()` over in-memory SQLite, fake provider: `intake.test.ts` (10 cases) covering capture/get/approve happy + failure paths (timeout → 503, invalid response → 502, budget → 402, not-found, dependency resolve) | ≥80% line coverage    |
+| Repos                                                                    | integration against temp-file SQLite (and `:memory:`)                                                                                                                                                                            | covered via API tests |
+| Web                                                                      | `client.test.ts` typed-decode tests; component smoke for error banner + fake badge; review/edit/approve interactions                                                                                                             | smoke-level           |
+| Live Claude                                                              | `pnpm test:live`, **gated by `ANTHROPIC_LIVE=1` + key**, never in CI                                                                                                                                                             | opt-in                |
+| E2E (later week)                                                         | Playwright happy path: capture → review → approve → complete → handover                                                                                                                                                          | optional stretch      |
 
 CI (GitHub Actions): install → lint → typecheck → test → build. Secrets are never needed
 for CI. Coverage thresholds are enforced in the same CI run.
@@ -379,14 +398,18 @@ shift-pilot/
 ├── tsconfig.base.json         # strict, project references
 ├── package.json               # root scripts: dev/test/typecheck/lint/build
 ├── packages/
-│   ├── contracts/             # zod schemas + types (shared SOT)
-│   ├── domain/                # pure engines, zero runtime deps
-│   └── provider/              # AiProvider · ClaudeProvider · FakeProvider · fixtures
+│   ├── contracts/             # zod schemas + types (shared SOT) — incl. M2 intake schemas
+│   ├── domain/                # pure engines, zero runtime deps · extraction.ts (pipeline)
+│   └── provider/              # AiProvider · FakeAiProvider (heuristic) · fixtures · ShiftContext
 └── apps/
     ├── api/                   # Fastify · use-cases · db (Drizzle/better-sqlite3) · repos · config
-    │   ├── fixtures/extraction/…
-    │   └── test/live/…        # ANTHROPIC_LIVE-gated
+    │   ├── use-cases/intake.ts  # captureIntake · getIntake · approveIntake
+    │   ├── repos/{intake,task,shift}.ts
+    │   ├── routes/intake.ts
+    │   └── drizzle/000{1,2}_*.sql  # raw_inputs + extraction_drafts migrations
     └── web/                   # React + Vite SPA · typed API client · components
+        ├── api/client.ts        # zod-decode at boundary · IntakeResult/ApprovalResult
+        └── components/{IntakeView,PlanView,HandoverView,FakeProviderBadge}.tsx
 ```
 
 Colocated tests (`*.test.ts` next to source). No barrel `index.ts` files in multi-module
@@ -394,16 +417,28 @@ directories (tree-shaking + import hygiene).
 
 ## 10. MVP vs stretch
 
-### Week-1 MVP (the full requirement set, ranked by build order)
+### Milestones (build order)
 
-M0 Scaffold · M1 contracts+domain engines · M2 provider + validation pipeline · M3
-persistence + API · M4 web UI (capture → review → approve → plan/next → handover, typed error
-surfaces, degraded banners) · M5 hardening, docs, demo script. Each milestone is a set of
-GitHub-sized issues — see `docs/implementation-plan.md`.
+- **M0** Scaffold — done.
+- **M1** Contracts + domain engines (priority, sequence, schedule, state machine, normalizer,
+  explain, handover-facts) — done. Plans are derived, never persisted; transparent priority.
+- **M2** AI-backed intake: `FakeAiProvider` behind one interface · `runExtraction` validation
+  pipeline in domain · `raw_inputs` + `extraction_drafts` persistence · `captureIntake` /
+  `getIntake` / `approveIntake` use cases + routes · web intake→review→approve UI · typed
+  degraded/offline surfaces (fake-provider badge, error banners). **Done.** The AI is fully
+  isolated: it only produces untrusted candidates; humans approve before any `Task` exists.
+- **M3** Handover persistence + live `claude` provider behind the existing interface (recorded
+  fixtures + drift test) — deferred.
+- **M4** Web polish: plan/next/handover views, interrupted-replan assist, voice capture —
+  partially present (plan/handover views exist; capture is text).
+- **M5** Hardening, docs, demo script — in progress (this doc update).
 
-MVP delivers capabilities 1–10 of the brief: capture, extraction, priority, dependencies,
-sequence, daily plan (timetable projection), what-next, handover, persistence, safe
-validation. `AI_PROVIDER=fake` makes the whole product runnable and demoable with zero cost.
+`AI_PROVIDER=fake` makes the whole product runnable and demoable with zero cost and no key.
+Selecting `claude` is a clear boot-time error until M3 lands the real provider.
+
+MVP delivers capabilities 1–9 of the brief: capture, extraction, priority, dependencies,
+sequence, daily plan (timetable projection), what-next, persistence, safe validation. `claude`
+activation and handover storage are M3.
 
 ### Stretch (later weeks, architecture-ready)
 
