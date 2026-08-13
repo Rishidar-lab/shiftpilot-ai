@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto"
 
 import type { AiProvider, ProviderFailure } from "@shiftpilot/provider"
 import { runExtraction } from "@shiftpilot/domain"
-import { checkDependencies } from "@shiftpilot/domain"
 import type { Database } from "../db/index.js"
 import {
   getRawInputRow,
   insertDrafts,
   insertRawInput,
   listDraftRows,
+  parseJsonArray,
   toDraft,
   toRawInput,
   updateRawInput,
@@ -19,12 +19,14 @@ import { CreateTaskRequest } from "@shiftpilot/contracts"
 import type {
   ApproveIntakeRequest,
   CreateIntakeRequest,
+  ExtractionDraft,
   ExtractionReport,
   RawInput,
+  Shift,
   ShiftContext,
   Task,
 } from "@shiftpilot/contracts"
-import { ConflictError, NotFoundError, ProviderError } from "./errors.js"
+import { ConflictError, NotFoundError, ProviderError, ValidationError } from "./errors.js"
 
 export interface IntakeResult {
   rawInput: RawInput
@@ -37,13 +39,14 @@ export interface ApprovalResult {
   report: ExtractionReport
 }
 
-function toShiftContext(shift: {
-  id: string
-  date: string
-  startAt: string
-  endAt: string
-}): ShiftContext {
-  return { id: shift.id, date: shift.date, startAt: shift.startAt, endAt: shift.endAt }
+function toShiftContext(shift: Shift): ShiftContext {
+  return {
+    id: shift.id,
+    date: shift.date,
+    startAt: shift.startAt,
+    endAt: shift.endAt,
+    timezone: shift.timezone,
+  }
 }
 
 function isProviderFailure(value: unknown): value is ProviderFailure {
@@ -83,32 +86,39 @@ function mapFailure(failure: ProviderFailure): ProviderError {
   }
 }
 
-function withTimeout<T>(
-  promise: Promise<T>,
+/**
+ * Bound the provider call in wall-clock time AND actually abort it. Rejecting
+ * without aborting leaves the HTTP request running and still spending quota
+ * after we have stopped caring about the answer (audit A-18).
+ */
+async function withTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
   ms: number,
   onTimeout: () => ProviderFailure,
 ): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(onTimeout()), ms)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error) => {
-        clearTimeout(timer)
-        reject(error)
-      },
-    )
+  const controller = new AbortController()
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(onTimeout())
+    }, ms)
   })
+  try {
+    return await Promise.race([run(controller.signal), timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 /**
- * Capture a worker's free-text intake. The RawInput is persisted with status
- * "received" BEFORE the provider is called, so a provider outage loses nothing.
- * On provider failure the RawInput is marked "failed" (auditable) and a
- * ProviderError surfaces the stable ai_* code. On success the domain pipeline
- * produces reviewable drafts persisted for the approval workflow.
+ * Capture a worker's free-text intake.
+ *
+ * Ordering is the durability contract (docs/architecture.md §5): the RawInput
+ * row exists before the provider is called and is flipped to "processing" for
+ * the duration of the call, so a crash or outage leaves a durable, auditable,
+ * retryable record instead of losing the worker's words. Which provider ran is
+ * recorded from the SERVER's provider metadata — never from client input.
  */
 export async function captureIntake(
   db: Database,
@@ -117,31 +127,36 @@ export async function captureIntake(
   dto: CreateIntakeRequest,
   timeoutMs: number,
 ): Promise<IntakeResult> {
-  const shift = getShift(db, shiftId)
-  const now = new Date().toISOString()
-  const providerId = dto.provider ?? provider.meta.id
-  const promptVersion = provider.meta.promptVersion
+  if (dto.shiftId !== undefined && dto.shiftId !== shiftId) {
+    throw new ValidationError(
+      `shiftId in the request body ("${dto.shiftId}") does not match the URL ("${shiftId}")`,
+    )
+  }
 
+  const shift = getShift(db, shiftId)
+  const now = new Date()
   const rawInputId = randomUUID()
+
   insertRawInput(db, {
     id: rawInputId,
     shiftId,
     rawText: dto.rawText,
     status: "received",
-    provider: providerId,
-    promptVersion,
-    createdAt: now,
+    provider: provider.meta.id,
+    promptVersion: provider.meta.promptVersion,
+    createdAt: now.toISOString(),
     processedAt: null,
     failureKind: null,
     failureMessage: null,
     reportWarnings: "[]",
   })
+  updateRawInput(db, rawInputId, { status: "processing" })
 
   const attempt = await withTimeout(
-    provider.extractTasks(dto.rawText, toShiftContext(shift)),
+    (signal) => provider.extractTasks(dto.rawText, toShiftContext(shift), signal),
     timeoutMs,
     () => ({ kind: "timeout" as const }),
-  ).catch((error) => {
+  ).catch((error: unknown) => {
     if (isProviderFailure(error)) return { ok: false, failure: error } as const
     throw error
   })
@@ -157,22 +172,31 @@ export async function captureIntake(
     throw mapFailure(failure)
   }
 
-  const existingTitles = listTasksByShift(db, shiftId).map((t) => t.row.title)
+  // Duplicate detection compares against tasks that still represent real work.
+  // Cancelled tasks are explicitly excluded: re-adding something the worker
+  // previously cancelled is a legitimate action, not a duplicate (audit A-21).
+  const existingTitles = listTasksByShift(db, shiftId)
+    .filter((t) => t.row.status !== "cancelled")
+    .map((t) => t.row.title)
+
   const report = runExtraction({
     rawInputId,
-    provider: providerId,
-    promptVersion,
+    provider: provider.meta.id,
+    promptVersion: provider.meta.promptVersion,
     raw: attempt.raw,
     shift: toShiftContext(shift),
     existingTitles,
     inputLength: dto.rawText.length,
+    now,
   })
 
-  insertDrafts(db, rawInputId, report.drafts)
-  updateRawInput(db, rawInputId, {
-    status: "review_required",
-    processedAt: report.generatedAt,
-    reportWarnings: JSON.stringify(report.warnings),
+  db.transaction((tx) => {
+    insertDrafts(tx, rawInputId, report.drafts)
+    updateRawInput(tx, rawInputId, {
+      status: "review_required",
+      processedAt: report.generatedAt,
+      reportWarnings: JSON.stringify(report.warnings),
+    })
   })
 
   return { rawInput: getRawInput(db, rawInputId), report }
@@ -199,16 +223,21 @@ export function getIntake(db: Database, id: string): IntakeResult {
     promptVersion: rawInput.promptVersion,
     generatedAt: rawInput.processedAt ?? rawInput.createdAt,
     drafts,
-    warnings: JSON.parse(row.reportWarnings) as string[],
+    warnings: parseJsonArray(row.reportWarnings),
   }
   return { rawInput, report }
 }
 
 /**
- * Approve (or reject) an intake's drafts. Approved drafts are promoted to real
- * M1 Tasks inside a single transaction; dependency edges are resolved to task
- * ids in a second pass (after every row exists) so forward references never
- * violate the FK. Rejected drafts are simply not promoted.
+ * Approve (or reject) an intake's drafts.
+ *
+ * Two invariants this function exists to protect:
+ *  1. A candidate the deterministic pipeline REJECTED can never become a task,
+ *     whatever the client asks for. Review means choosing among candidates that
+ *     passed policy, not overriding policy (audit A-4).
+ *  2. Task creation, dependency edges and the intake status flip are ONE
+ *     transaction. Splitting them let a crash create tasks while leaving the
+ *     intake approvable again, duplicating every task on retry (audit A-7).
  */
 export function approveIntake(
   db: Database,
@@ -218,16 +247,27 @@ export function approveIntake(
   const row = getRawInputRow(db, rawInputId)
   if (row === undefined) throw new NotFoundError("raw_input", rawInputId)
   if (row.status !== "review_required") {
-    throw new ConflictError("intake is not awaiting review")
+    throw new ConflictError(
+      `intake is not awaiting review (status: ${row.status}); it cannot be approved twice`,
+    )
   }
 
   const drafts = listDraftRows(db, rawInputId).map(toDraft)
   if (drafts.length === 0) throw new ConflictError("intake has no drafts to approve")
 
   const draftById = new Map(drafts.map((d) => [d.id, d]))
+  const seenDecisions = new Set<string>()
   for (const decision of dto.decisions) {
-    if (!draftById.has(decision.draftId)) {
-      throw new NotFoundError("draft", decision.draftId)
+    const draft = draftById.get(decision.draftId)
+    if (draft === undefined) throw new NotFoundError("draft", decision.draftId)
+    if (seenDecisions.has(decision.draftId)) {
+      throw new ValidationError(`duplicate decision for draft "${decision.draftId}"`)
+    }
+    seenDecisions.add(decision.draftId)
+    if (decision.action === "approve" && draft.disposition === "rejected") {
+      throw new ValidationError(
+        `draft "${decision.draftId}" was rejected by validation (${draft.rejectionReason ?? "policy"}) and cannot be approved`,
+      )
     }
   }
 
@@ -237,87 +277,102 @@ export function approveIntake(
   for (const decision of dto.decisions) {
     if (decision.action !== "approve") continue
     const draft = draftById.get(decision.draftId)!
-    const fields = CreateTaskRequest.parse({
-      title: decision.edits?.title ?? draft.title,
-      category: decision.edits?.category ?? draft.category ?? "other",
-      estimatedMinutes: decision.edits?.estimatedMinutes ?? draft.estimatedMinutes,
-      deadlineAt:
-        decision.edits?.deadlineAt !== undefined ? decision.edits.deadlineAt : draft.deadlineAt,
-      explicitUrgency: decision.edits?.explicitUrgency ?? draft.explicitUrgency,
-      dependsOn: [],
-      notes: null,
-    })
-    const deadlineSource =
-      fields.deadlineAt === null
-        ? "unresolved"
-        : decision.edits?.deadlineAt !== undefined
-          ? "manual"
-          : draft.deadlineSource === "parsed"
-            ? "parsed"
-            : "manual"
-    const taskId = randomUUID()
-    const task: Task = {
-      id: taskId,
-      shiftId: row.shiftId,
-      title: fields.title,
-      category: fields.category,
-      estimatedMinutes: fields.estimatedMinutes ?? null,
-      deadlineAt: fields.deadlineAt ?? null,
-      deadlineSource,
-      explicitUrgency: fields.explicitUrgency,
-      status: "active",
-      dependsOn: [],
-      blockReason: null,
-      notes: fields.notes ?? null,
-      createdAt: now,
-      updatedAt: now,
-      completedAt: null,
-    }
     approved.push({
       draftId: decision.draftId,
-      task,
+      task: toTaskDraft(draft, decision.edits, row.shiftId, now),
       refs: decision.edits?.dependsOn ?? draft.dependsOn,
     })
   }
 
-  const draftIdToTaskId = new Map(approved.map((a) => [a.draftId, a.task.id]))
-  const validIds = new Set(approved.map((a) => a.task.id))
+  resolveApprovedDependencies(approved)
 
-  const titleToTaskId = new Map(
-    approved.map((a) => [a.task.title.trim().toLowerCase(), a.task.id] as const),
-  )
-
-  for (const entry of approved) {
-    const resolved: string[] = []
-    for (const ref of entry.refs) {
-      const hash = ref.match(/^draft-(\d+)$/i)
-      if (hash) {
-        const target = draftIdToTaskId.get(`draft-${hash[1]}`)
-        if (target) resolved.push(target)
-        continue
-      }
-      const match = titleToTaskId.get(ref.trim().toLowerCase())
-      if (match) resolved.push(match)
-    }
-    const check = checkDependencies(resolved, entry.task.id, validIds)
-    entry.task.dependsOn =
-      check.invalid.length === 0 ? resolved : resolved.filter((d) => validIds.has(d))
-  }
+  const status: RawInput["status"] =
+    approved.length === drafts.length ? "approved" : "partially_approved"
 
   db.transaction((tx) => {
     for (const entry of approved) insertTaskRow(tx, entry.task)
     for (const entry of approved) insertDependencies(tx, entry.task.id, entry.task.dependsOn)
+    updateRawInput(tx, rawInputId, { status })
   })
-
-  const approvedCount = approved.length
-  const status: RawInput["status"] =
-    approvedCount === drafts.length ? "approved" : "partially_approved"
-  updateRawInput(db, rawInputId, { status })
 
   const refreshed = getIntake(db, rawInputId)
   return {
     rawInput: refreshed.rawInput,
     createdTasks: approved.map((a) => a.task),
     report: refreshed.report,
+  }
+}
+
+/** Apply a reviewer's edits over a draft and re-validate through contracts. */
+function toTaskDraft(
+  draft: ExtractionDraft,
+  edits: NonNullable<ApproveIntakeRequest["decisions"][number]["edits"]> | undefined,
+  shiftId: string,
+  now: string,
+): Task {
+  const fields = CreateTaskRequest.parse({
+    title: edits?.title ?? draft.title,
+    category: edits?.category ?? draft.category ?? "other",
+    estimatedMinutes: edits?.estimatedMinutes ?? draft.estimatedMinutes,
+    deadlineAt: edits?.deadlineAt !== undefined ? edits.deadlineAt : draft.deadlineAt,
+    explicitUrgency: edits?.explicitUrgency ?? draft.explicitUrgency,
+    dependsOn: [],
+    notes: null,
+  })
+
+  const deadlineAt = fields.deadlineAt ?? null
+  const deadlineSource: Task["deadlineSource"] =
+    deadlineAt === null
+      ? "unresolved"
+      : edits?.deadlineAt !== undefined
+        ? "manual"
+        : draft.deadlineSource === "parsed"
+          ? "parsed"
+          : "manual"
+
+  return {
+    id: randomUUID(),
+    shiftId,
+    title: fields.title,
+    category: fields.category,
+    estimatedMinutes: fields.estimatedMinutes ?? null,
+    deadlineAt,
+    deadlineSource,
+    explicitUrgency: fields.explicitUrgency,
+    status: "active",
+    dependsOn: [],
+    blockReason: null,
+    notes: fields.notes ?? null,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+  }
+}
+
+/**
+ * Map draft-level references onto the ids of the tasks actually created.
+ * References to drafts that were NOT approved are dropped (their target does
+ * not exist), and a reference that resolves to the task itself is dropped
+ * rather than written — a self-edge violates the task_dependencies CHECK
+ * constraint and previously surfaced as a 500 (audit A-6/A-22).
+ */
+function resolveApprovedDependencies(
+  approved: Array<{ draftId: string; task: Task; refs: string[] }>,
+): void {
+  const draftIdToTaskId = new Map(approved.map((a) => [a.draftId, a.task.id]))
+  const titleToTaskId = new Map(approved.map((a) => [a.task.title.trim().toLowerCase(), a.task.id]))
+  const validIds = new Set(approved.map((a) => a.task.id))
+
+  for (const entry of approved) {
+    const resolved: string[] = []
+    for (const ref of entry.refs) {
+      const byDraft = draftIdToTaskId.get(ref)
+      const target = byDraft ?? titleToTaskId.get(ref.trim().toLowerCase())
+      if (target === undefined) continue
+      if (target === entry.task.id) continue
+      if (!validIds.has(target)) continue
+      resolved.push(target)
+    }
+    entry.task.dependsOn = [...new Set(resolved)]
   }
 }

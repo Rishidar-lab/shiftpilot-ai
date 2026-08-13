@@ -61,11 +61,26 @@ export function toDraft(row: DraftRow): ExtractionDraft {
     estimatedMinutes: row.estimatedMinutes,
     deadlineAt: row.deadlineAt,
     deadlineSource: row.deadlineSource,
+    deadlineHint: row.deadlineHint,
     explicitUrgency: row.explicitUrgency,
-    dependsOn: JSON.parse(row.dependsOn) as string[],
+    dependsOn: parseJsonArray(row.dependsOn),
     sourceText: row.sourceText,
-    reasons: JSON.parse(row.reasons) as string[],
+    rejectionReason: row.rejectionReason,
+    reasons: parseJsonArray(row.reasons),
   })
+}
+
+/**
+ * JSON columns we wrote ourselves, but a corrupt/hand-edited row must not take
+ * the whole intake down — an empty list is the safe, visible degradation.
+ */
+export function parseJsonArray(value: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : []
+  } catch {
+    return []
+  }
 }
 
 function toDraftRow(
@@ -83,9 +98,11 @@ function toDraftRow(
     estimatedMinutes: draft.estimatedMinutes,
     deadlineAt: draft.deadlineAt,
     deadlineSource: draft.deadlineSource,
+    deadlineHint: draft.deadlineHint,
     explicitUrgency: draft.explicitUrgency,
     dependsOn: JSON.stringify(draft.dependsOn),
     sourceText: draft.sourceText,
+    rejectionReason: draft.rejectionReason,
     reasons: JSON.stringify(draft.reasons),
   }
 }
