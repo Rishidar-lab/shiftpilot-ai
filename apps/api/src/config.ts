@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { assertFreeOpenRouterModel } from "@shiftpilot/provider"
+
 /**
  * Schema fields mirror the env var names exactly (PORT, HOST, ...): zod objects
  * are case-sensitive, and a mismatched key is silently treated as an unknown
@@ -25,7 +27,7 @@ export const envSchema = z.object({
     emptyToUndefined,
     z.enum(["development", "test", "production"]).optional(),
   ),
-  AI_PROVIDER: z.preprocess(emptyToUndefined, z.enum(["fake", "claude"]).optional()),
+  AI_PROVIDER: z.preprocess(emptyToUndefined, z.enum(["fake", "claude", "openrouter"]).optional()),
   AI_TIMEOUT_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
   /** Hard cap on a single intake, below the contracts limit of 20000. */
   AI_MAX_INPUT_CHARS: z.preprocess(
@@ -61,6 +63,31 @@ export const envSchema = z.object({
     emptyToUndefined,
     z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
   ),
+
+  // --- OpenRouter provider (only consulted when AI_PROVIDER=openrouter) ---
+  /**
+   * Free-tier route only. `openrouter/free` or a `<vendor>/<model>:free` id;
+   * anything else is rejected at parse time by assertFreeOpenRouterModel.
+   */
+  OPENROUTER_API_KEY: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  OPENROUTER_MODEL: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  OPENROUTER_BASE_URL: z.preprocess(
+    emptyToUndefined,
+    z.string().url().default("https://openrouter.ai/api/v1"),
+  ),
+  /** Free-tier routes cap output; keep the ceiling small. */
+  OPENROUTER_MAX_OUTPUT_TOKENS: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().min(64).max(4096).optional(),
+  ),
+  /**
+   * Bounded retries for HTTP 429 ONLY, same route, with backoff. Default 0:
+   * a rate-limited free route fails rather than burning time or spending.
+   */
+  OPENROUTER_MAX_RETRIES: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().min(0).max(3).optional(),
+  ),
 })
 
 type ParsedEnv = z.infer<typeof envSchema>
@@ -74,18 +101,30 @@ export interface AnthropicConfig {
   effort?: "low" | "medium" | "high" | "xhigh" | "max"
 }
 
+/** Resolved OpenRouter settings; present only when AI_PROVIDER=openrouter. */
+export interface OpenRouterConfig {
+  apiKey: string
+  /** Always a free-tier route: validated by assertFreeOpenRouterModel. */
+  model: string
+  maxOutputTokens: number
+  /** Bounded 429-only retries, same route, with backoff. Default 0. */
+  maxRetries: number
+  baseUrl: string
+}
+
 export interface AppConfig {
   port: number
   host: string
   corsOrigin: string
   nodeEnv: "development" | "test" | "production"
-  aiProvider: "fake" | "claude"
+  aiProvider: "fake" | "claude" | "openrouter"
   aiTimeoutMs: number
   aiMaxInputChars: number
   aiRateLimit: number
   aiRateLimitWindowMs: number
   databasePath: string
   anthropic: AnthropicConfig | null
+  openrouter: OpenRouterConfig | null
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -100,6 +139,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   aiRateLimitWindowMs: 60_000,
   databasePath: "data/shiftpilot.db",
   anthropic: null,
+  openrouter: null,
 }
 
 function applyDefaults(env: ParsedEnv): AppConfig {
@@ -115,6 +155,7 @@ function applyDefaults(env: ParsedEnv): AppConfig {
     aiRateLimitWindowMs: env.AI_RATE_LIMIT_WINDOW_MS ?? DEFAULT_CONFIG.aiRateLimitWindowMs,
     databasePath: env.DATABASE_PATH ?? DEFAULT_CONFIG.databasePath,
     anthropic: null,
+    openrouter: null,
   }
 }
 
@@ -131,14 +172,24 @@ export function parseAppConfig(env: Record<string, string | undefined>): AppConf
     throw new Error(`Invalid environment configuration: ${detail}`)
   }
   const config = applyDefaults(result.data)
-  if (config.aiProvider !== "claude") return config
+  if (config.aiProvider === "claude") {
+    return withClaudeConfig(config, result.data)
+  }
+  if (config.aiProvider === "openrouter") {
+    return withOpenRouterConfig(config, result.data)
+  }
+  return config
+}
 
-  // Fail fast and loudly: a half-configured Claude mode must never start and
-  // must never quietly degrade to the offline provider, or an operator could
-  // believe real AI is running when it is not.
+/**
+ * Fail fast and loudly: a half-configured Claude mode must never start and
+ * must never quietly degrade to the offline provider, or an operator could
+ * believe real AI is running when it is not.
+ */
+function withClaudeConfig(config: AppConfig, env: ParsedEnv): AppConfig {
   const missing: string[] = []
-  if (result.data.ANTHROPIC_API_KEY === undefined) missing.push("ANTHROPIC_API_KEY")
-  if (result.data.ANTHROPIC_MODEL === undefined) missing.push("ANTHROPIC_MODEL")
+  if (env.ANTHROPIC_API_KEY === undefined) missing.push("ANTHROPIC_API_KEY")
+  if (env.ANTHROPIC_MODEL === undefined) missing.push("ANTHROPIC_MODEL")
   if (missing.length > 0) {
     throw new Error(
       `AI_PROVIDER=claude requires ${missing.join(" and ")}. ` +
@@ -150,11 +201,43 @@ export function parseAppConfig(env: Record<string, string | undefined>): AppConf
   return {
     ...config,
     anthropic: {
-      apiKey: result.data.ANTHROPIC_API_KEY!,
-      model: result.data.ANTHROPIC_MODEL!,
-      maxOutputTokens: result.data.ANTHROPIC_MAX_OUTPUT_TOKENS ?? 4096,
-      maxRetries: result.data.ANTHROPIC_MAX_RETRIES ?? 2,
-      ...(result.data.ANTHROPIC_EFFORT ? { effort: result.data.ANTHROPIC_EFFORT } : {}),
+      apiKey: env.ANTHROPIC_API_KEY!,
+      model: env.ANTHROPIC_MODEL!,
+      maxOutputTokens: env.ANTHROPIC_MAX_OUTPUT_TOKENS ?? 4096,
+      maxRetries: env.ANTHROPIC_MAX_RETRIES ?? 2,
+      ...(env.ANTHROPIC_EFFORT ? { effort: env.ANTHROPIC_EFFORT } : {}),
+    },
+  }
+}
+
+/**
+ * OpenRouter mode is free-tier only. A paid OPENROUTER_MODEL is refused here,
+ * at parse time, before any provider can be constructed — the same guard the
+ * provider itself runs before every inference.
+ */
+function withOpenRouterConfig(config: AppConfig, env: ParsedEnv): AppConfig {
+  const missing: string[] = []
+  if (env.OPENROUTER_API_KEY === undefined) missing.push("OPENROUTER_API_KEY")
+  if (env.OPENROUTER_MODEL === undefined) missing.push("OPENROUTER_MODEL")
+  if (missing.length > 0) {
+    throw new Error(
+      `AI_PROVIDER=openrouter requires ${missing.join(" and ")}. ` +
+        "Set them in apps/api/.env (never in source control), or use AI_PROVIDER=fake " +
+        "for the offline provider. See .env.example.",
+    )
+  }
+
+  // The mandatory guard: reject paid/non-free routes before anything runs.
+  assertFreeOpenRouterModel(env.OPENROUTER_MODEL!)
+
+  return {
+    ...config,
+    openrouter: {
+      apiKey: env.OPENROUTER_API_KEY!,
+      model: env.OPENROUTER_MODEL!,
+      maxOutputTokens: env.OPENROUTER_MAX_OUTPUT_TOKENS ?? 1024,
+      maxRetries: env.OPENROUTER_MAX_RETRIES ?? 0,
+      baseUrl: env.OPENROUTER_BASE_URL!,
     },
   }
 }

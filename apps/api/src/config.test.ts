@@ -105,6 +105,100 @@ describe("parseAppConfig", () => {
     })
   })
 
+  describe("openrouter provider configuration", () => {
+    const PAID = [
+      "anthropic/claude-sonnet-5",
+      "openai/gpt-4o",
+      "google/gemini-2.5-pro",
+      "deepseek/deepseek-chat",
+      "meta-llama/llama-3.3-70b-instruct",
+    ]
+
+    it("refuses to start when the key or model is missing", () => {
+      expect(() => parseAppConfig({ AI_PROVIDER: "openrouter" })).toThrow(
+        /requires OPENROUTER_API_KEY and OPENROUTER_MODEL/,
+      )
+      expect(() =>
+        parseAppConfig({ AI_PROVIDER: "openrouter", OPENROUTER_API_KEY: "sk-or-v1-x" }),
+      ).toThrow(/requires OPENROUTER_MODEL/)
+      expect(() =>
+        parseAppConfig({ AI_PROVIDER: "openrouter", OPENROUTER_MODEL: "openrouter/free" }),
+      ).toThrow(/requires OPENROUTER_API_KEY/)
+    })
+
+    // The mandatory guard lives here too: a paid OPENROUTER_MODEL must be
+    // refused at parse time, before any provider could be constructed.
+    it("rejects every paid/non-free OPENROUTER_MODEL at parse time", () => {
+      for (const model of PAID) {
+        expect(
+          () =>
+            parseAppConfig({
+              AI_PROVIDER: "openrouter",
+              OPENROUTER_API_KEY: "sk-or-v1-x",
+              OPENROUTER_MODEL: model,
+            }),
+          model,
+        ).toThrow(/Paid\/non-free OpenRouter model rejected/)
+      }
+    })
+
+    it("never degrades to the fake provider when openrouter is misconfigured", () => {
+      expect(() => parseAppConfig({ AI_PROVIDER: "openrouter" })).toThrow()
+      expect(parseAppConfig({ AI_PROVIDER: "fake" }).openrouter).toBeNull()
+    })
+
+    it("resolves free openrouter settings with documented defaults", () => {
+      const config = parseAppConfig({
+        AI_PROVIDER: "openrouter",
+        OPENROUTER_API_KEY: "sk-or-v1-x",
+        OPENROUTER_MODEL: "openrouter/free",
+      })
+      expect(config.aiProvider).toBe("openrouter")
+      expect(config.openrouter).toEqual({
+        apiKey: "sk-or-v1-x",
+        model: "openrouter/free",
+        maxOutputTokens: 1024,
+        maxRetries: 0,
+        baseUrl: "https://openrouter.ai/api/v1",
+      })
+    })
+
+    it("accepts any <vendor>/<model>:free id", () => {
+      const config = parseAppConfig({
+        AI_PROVIDER: "openrouter",
+        OPENROUTER_API_KEY: "sk-or-v1-x",
+        OPENROUTER_MODEL: "meta-llama/llama-3.3-70b-instruct:free",
+      })
+      expect(config.openrouter?.model).toBe("meta-llama/llama-3.3-70b-instruct:free")
+    })
+
+    it("honours explicit base URL and output overrides", () => {
+      const config = parseAppConfig({
+        AI_PROVIDER: "openrouter",
+        OPENROUTER_API_KEY: "sk-or-v1-x",
+        OPENROUTER_MODEL: "openrouter/free",
+        OPENROUTER_BASE_URL: "https://proxy.example.com/api/v1",
+        OPENROUTER_MAX_OUTPUT_TOKENS: "256",
+      })
+      expect(config.openrouter?.baseUrl).toBe("https://proxy.example.com/api/v1")
+      expect(config.openrouter?.maxOutputTokens).toBe(256)
+    })
+
+    it("rejects an output ceiling outside the free-tier bounds", () => {
+      const base = {
+        AI_PROVIDER: "openrouter",
+        OPENROUTER_API_KEY: "sk-or-v1-x",
+        OPENROUTER_MODEL: "openrouter/free",
+      }
+      expect(() => parseAppConfig({ ...base, OPENROUTER_MAX_OUTPUT_TOKENS: "63" })).toThrow(
+        /Invalid environment configuration/,
+      )
+      expect(() => parseAppConfig({ ...base, OPENROUTER_MAX_OUTPUT_TOKENS: "4097" })).toThrow(
+        /Invalid environment configuration/,
+      )
+    })
+  })
+
   it("applies cost-control defaults and honours overrides", () => {
     const defaults = parseAppConfig({})
     expect(defaults.aiMaxInputChars).toBe(8000)

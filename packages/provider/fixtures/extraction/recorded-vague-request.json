@@ -1,0 +1,26 @@
+{
+  "name": "recorded-vague-request",
+  "source": "recorded",
+  "note": "Captured from a real OpenRouter free (google/gemma-4-26b-a4b-it:free) API response during the live evaluation.",
+  "input": "sort out the thing from yesterday",
+  "output": {
+    "tasks": [
+      {
+        "title": "sort out the thing from yesterday",
+        "description": "sort out the thing from yesterday",
+        "deadlineHint": null,
+        "estimatedMinutes": null,
+        "estimatedMinutesSource": null,
+        "explicitUrgency": null,
+        "category": "other",
+        "dependencies": [],
+        "ambiguity": ["vague reference to 'the thing'"],
+        "sourceText": "sort out the thing from yesterday"
+      }
+    ]
+  },
+  "model": "google/gemma-4-26b-a4b-it:free",
+  "resolvedModel": "google/gemma-4-26b-a4b-it:free",
+  "promptVersion": "3",
+  "recordedAt": "2026-08-14T16:12:18.068Z"
+}

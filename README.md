@@ -8,9 +8,10 @@ extraction, priority reasoning, dependency detection, execution sequencing, dail
 > **Status: M3 in progress.** The full capture → review → approve → plan → handover
 > workflow runs today. Two providers sit behind one interface: a deterministic offline
 > provider, and a real Anthropic Claude provider selected by configuration.
-> **No live Claude call has been made from this repository yet** — the adapter, prompt,
-> tests and evaluation corpus are in place, but the run that would prove a genuine API
-> interaction needs credentials (see "Verifying a real Claude call" below).
+> **No live Claude call has been made from this repository yet** — the Claude adapter,
+> prompt, tests and evaluation corpus are in place, but no Anthropic credential has ever
+> been used. The OpenRouter route IS live-verified on the free tier (see below); the
+> Claude route remains unexercised.
 > `docs/implementation-plan.md` is the source of truth for build order.
 > Week-1 deliverable for the Innovation Hacks AI Internship 2026. Submission evidence:
 > `docs/week1-submission-matrix.md`, `docs/rubric-self-review.md`, `docs/demo-script.md`.
@@ -144,6 +145,37 @@ small set of clean case responses into `packages/provider/fixtures/` as
 `"source": "recorded"` fixtures — there is no separate capture command; recording happens
 on a live eval run.
 
+### Verifying a real OpenRouter call (free route only)
+
+The same evaluation runner works against OpenRouter, with a hard free-tier-only guard.
+Every request must use `openrouter/free` or a `<vendor>/<model>:free` id — any other model
+is rejected at configuration time and before every inference, and there is never a paid
+fallback. The smoke test pins `openrouter/free` and makes exactly one request:
+
+```sh
+AI_PROVIDER=openrouter OPENROUTER_API_KEY=... pnpm smoke:openrouter
+```
+
+The full controlled evaluation (16 corpus cases + handover) runs with the guard enforced:
+
+```sh
+AI_PROVIDER=openrouter OPENROUTER_API_KEY=... \
+OPENROUTER_MODEL=<free-model>:free pnpm eval:openrouter
+```
+
+Free-tier quirks, recorded honestly in `docs/eval/`:
+
+- The `openrouter/free` alias load-balances across the current free pool, which includes
+  models that do not produce usable JSON (safety classifiers, sub-3B chatbots). It is the
+  mandated smoke route and passes, but it cannot reliably serve a 16-case corpus.
+- Specific free models have shared global quotas; HTTP 429 is retried with backoff on the
+  exact same route when `OPENROUTER_MAX_RETRIES > 0`, and the eval retries transient
+  failures per case (attempts are reported). A rate-limited route fails rather than ever
+  touching a paid model.
+- `docs/eval/results.md` is the live report; the Aug 2026 verification ran the corpus
+  16/16 on `google/gemma-4-26b-a4b-it:free` with every request confirmed on the free
+  tier, and recorded fixtures carry both the configured and the resolved model.
+
 ## Cost and safety controls
 
 Capture (`POST /api/shifts/:id/intake`) is the only endpoint that spends provider tokens,
@@ -181,10 +213,11 @@ test. **CI needs no secrets and makes no paid API calls.**
 
 - **No authentication or multi-user isolation.** Shift ids are not owner-scoped. Deliberate
   Week-1 scope, not an oversight.
-- **No live Claude call has been made from this repository yet.** The adapter, prompt,
-  contract tests, fixtures and evaluation corpus exist and are exercised offline, but the
-  genuine-API-interaction evidence the Week-1 brief asks for requires credentials and has
-  not been produced. Every fixture in the repo is labelled `"source": "synthetic"`.
+- **No live Claude call has been made from this repository yet.** The Claude adapter,
+  prompt, contract tests, fixtures and evaluation corpus exist and are exercised offline;
+  the OpenRouter free route is verified live (see above), but no Anthropic credential has
+  ever been used here. Fixtures labelled `"source": "recorded"` come from the OpenRouter
+  free route; everything else is `"source": "synthetic"`.
 - **AI handover prose is implemented, with a degraded mode.** The narrative is drafted from
   the deterministic facts only — the model never sees counts or history the database did not
   already prove — and a provider outage or invalid output yields an explicitly labelled

@@ -3,6 +3,7 @@ import path from "node:path"
 
 import { buildHandoverFacts, normalizeHandoverNarrative, runExtraction } from "@shiftpilot/domain"
 import type { ExtractionReport, Shift, ShiftContext, Task } from "@shiftpilot/contracts"
+import type { AiProvider } from "@shiftpilot/provider"
 
 import { EVAL_CORPUS } from "./corpus.js"
 import { redact, requireLiveContext } from "./live-gate.js"
@@ -11,12 +12,13 @@ import { redact, requireLiveContext } from "./live-gate.js"
  * The complete gated real-provider evaluation. One command, start to finish.
  *
  *   ANTHROPIC_LIVE=1 AI_PROVIDER=claude pnpm eval:claude
+ *   AI_PROVIDER=openrouter OPENROUTER_MODEL=openrouter/free pnpm eval:openrouter
  *
- * SPENDS MONEY. It is a standalone entrypoint, never imported by the test suite,
- * and it refuses to run without an explicit opt-in on top of credentials, so no
- * amount of `pnpm test`, CI, or accidental import can trigger a paid call.
- * Run `pnpm smoke:claude` first — one call is a cheaper way to find a bad model
- * id than seventeen.
+ * The Claude variant SPENDS MONEY and refuses to run without an explicit
+ * opt-in. The OpenRouter variant is FREE-tier only: the free-model guard runs
+ * before every request, there is no retry and no paid fallback. Run the
+ * matching smoke test first — one call is a cheaper way to find a bad model id
+ * than a full corpus.
  *
  * Every response is validated through the REAL production pipeline, not a test
  * double, so what this measures is whether the application can actually use the
@@ -77,7 +79,7 @@ async function main(): Promise<void> {
     lines.push(text)
   }
 
-  say(`# ShiftPilot — real Claude evaluation\n\n`)
+  say(`# ShiftPilot — real ${provider.meta.label} evaluation\n\n`)
   say(`Run at: ${startedAt}\n\n`)
   say("```\n")
   say(`${banner}\n`)
@@ -97,9 +99,15 @@ async function main(): Promise<void> {
     say(`- input: \`${JSON.stringify(testCase.input)}\`\n`)
     say(`- expected: ${testCase.expectation}\n`)
 
-    const attempt = await provider.extractTasks(testCase.input, SHIFT)
+    const attempt = await attemptWithRetries(
+      (signal) => provider.extractTasks(testCase.input, SHIFT, signal),
+      TRANSIENT_FAILURES,
+    )
     if (!attempt.ok) {
-      say(`- request: **FAILED** (${attempt.failure.kind})\n\n`)
+      say(
+        `- request: **FAILED** (${attempt.failure.kind})` +
+          ` after ${attempt.attempts} attempt${attempt.attempts === 1 ? "" : "s"}\n\n`,
+      )
       outcomes.push({
         id: testCase.id,
         probe: testCase.probe,
@@ -113,6 +121,12 @@ async function main(): Promise<void> {
       })
       continue
     }
+
+    say(
+      `- request: ok` +
+        (attempt.attempts > 1 ? ` (attempt ${attempt.attempts}/${MAX_ATTEMPTS})` : "") +
+        "\n",
+    )
 
     const report = runExtraction({
       rawInputId: testCase.id,
@@ -162,7 +176,10 @@ async function main(): Promise<void> {
   // --- Handover -------------------------------------------------------------
   say("## Handover narrative\n\n")
   const facts = buildHandoverFacts({ shift: demoShift(), tasks: demoTasks(), now: NOW })
-  const handover = await provider.generateHandover(facts)
+  const handover = await attemptWithRetries(
+    (signal) => provider.generateHandover(facts, signal),
+    TRANSIENT_FAILURES,
+  )
 
   if (!handover.ok) {
     say(`- request: **FAILED** (${handover.failure.kind})\n`)
@@ -207,6 +224,34 @@ async function main(): Promise<void> {
   if (failed.length > 0) process.exit(1)
 }
 
+/**
+ * A corpus case may need several attempts on the free tier: shared quotas
+ * throttle mid-run and free models sometimes emit an unusable body. Each
+ * attempt is a fresh request on the EXACT same route — never a different
+ * model, never a paid one. Transient kinds are retried; operator problems
+ * (credentials, config, billing) fail immediately.
+ */
+const MAX_ATTEMPTS = 3
+
+const TRANSIENT_FAILURES = new Set(["rate_limited", "invalid_response", "network", "timeout"])
+
+async function attemptWithRetries<T extends { ok: boolean }>(
+  run: (signal?: AbortSignal) => Promise<T>,
+  transientKinds: Set<string>,
+): Promise<T & { attempts: number }> {
+  for (let attempt = 1; ; attempt++) {
+    const result = await run(undefined)
+    if (result.ok || attempt >= MAX_ATTEMPTS || !transientKinds.has(getKind(result))) {
+      return { ...result, attempts: attempt }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt))
+  }
+}
+
+function getKind(result: { ok: boolean; failure?: { kind: string } }): string {
+  return result.ok ? "" : result.failure!.kind
+}
+
 function tally(report: ExtractionReport) {
   return {
     accepted: report.drafts.filter((d) => d.disposition === "accepted").length,
@@ -219,22 +264,29 @@ function tally(report: ExtractionReport) {
  * Record a real response as a labelled fixture. `"source": "recorded"` is a
  * factual claim that an API response produced this file — nothing else in the
  * repository may set that label.
+ *
+ * The model is recorded as CONFIGURED (`provider.meta.model`), and for
+ * OpenRouter the actual routed model is recorded separately ONLY when the
+ * response reported it. No claim about the underlying model beyond that.
  */
 function writeFixture(
   dir: string,
   id: string,
   input: string,
   output: unknown,
-  provider: { meta: { model: string | null; promptVersion: string } },
+  provider: AiProvider,
 ): void {
   mkdirSync(dir, { recursive: true })
   const fixture = {
     name: `recorded-${id}`,
     source: "recorded",
-    note: `Captured from a real Anthropic API response during pnpm eval:claude.`,
+    note: `Captured from a real ${provider.meta.label} API response during the live evaluation.`,
     input,
     output,
     model: provider.meta.model,
+    ...("resolvedModel" in provider && provider.resolvedModel !== null
+      ? { resolvedModel: provider.resolvedModel }
+      : {}),
     promptVersion: provider.meta.promptVersion,
     recordedAt: new Date().toISOString(),
   }

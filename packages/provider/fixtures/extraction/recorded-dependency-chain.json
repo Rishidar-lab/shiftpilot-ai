@@ -1,0 +1,38 @@
+{
+  "name": "recorded-dependency-chain",
+  "source": "recorded",
+  "note": "Captured from a real OpenRouter free (google/gemma-4-26b-a4b-it:free) API response during the live evaluation.",
+  "input": "Do the stocktake in the back room. Brief the new starter after the stocktake.",
+  "output": {
+    "tasks": [
+      {
+        "title": "Do the stocktake",
+        "description": "stocktake in the back room",
+        "deadlineHint": null,
+        "estimatedMinutes": null,
+        "estimatedMinutesSource": null,
+        "explicitUrgency": null,
+        "category": "other",
+        "dependencies": [],
+        "ambiguity": [],
+        "sourceText": "Do the stocktake in the back room. Brief the new starter after the stocktake."
+      },
+      {
+        "title": "Brief the new starter",
+        "description": "Brief the new starter",
+        "deadlineHint": null,
+        "estimatedMinutes": null,
+        "estimatedMinutesSource": null,
+        "explicitUrgency": null,
+        "category": "training",
+        "dependencies": ["#1"],
+        "ambiguity": [],
+        "sourceText": "Do the stocktake in the back room. Brief the new starter after the stocktake."
+      }
+    ]
+  },
+  "model": "google/gemma-4-26b-a4b-it:free",
+  "resolvedModel": "google/gemma-4-26b-a4b-it:free",
+  "promptVersion": "3",
+  "recordedAt": "2026-08-14T16:11:15.174Z"
+}

@@ -282,7 +282,7 @@ describe("fake and Claude parity at the downstream boundary", () => {
     const shiftId = await createShift(app)
     const { body } = await capture(app, shiftId, "x")
     expect(body.rawInput.provider).toBe("claude")
-    expect(body.rawInput.promptVersion).toBe("claude-1")
+    expect(body.rawInput.promptVersion).toBe("3")
   })
 
   it("maps a Claude outage to the same API error a fake outage produces", async () => {

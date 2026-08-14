@@ -1,0 +1,50 @@
+{
+  "name": "recorded-clear-multi",
+  "source": "recorded",
+  "note": "Captured from a real OpenRouter free (google/gemma-4-26b-a4b-it:free) API response during the live evaluation.",
+  "input": "Restock aisle 3\nCall Mrs Chen about her order\nCheck the fire exits",
+  "output": {
+    "tasks": [
+      {
+        "title": "Restock aisle 3",
+        "description": null,
+        "deadlineHint": null,
+        "estimatedMinutes": null,
+        "estimatedMinutesSource": null,
+        "explicitUrgency": null,
+        "category": "other",
+        "dependencies": [],
+        "ambiguity": [],
+        "sourceText": "Restock aisle 3"
+      },
+      {
+        "title": "Call Mrs Chen about her order",
+        "description": "Call Mrs Chen about her order",
+        "deadlineHint": null,
+        "estimatedMinutes": null,
+        "estimatedMinutesSource": null,
+        "explicitUrgency": null,
+        "category": "customer",
+        "dependencies": [],
+        "ambiguity": [],
+        "sourceText": "Call Mrs Chen about her order"
+      },
+      {
+        "title": "Check the fire exits",
+        "description": null,
+        "deadlineHint": null,
+        "estimatedMinutes": null,
+        "estimatedMinutesSource": null,
+        "explicitUrgency": null,
+        "category": "safety",
+        "dependencies": [],
+        "ambiguity": [],
+        "sourceText": "Check the fire exits"
+      }
+    ]
+  },
+  "model": "google/gemma-4-26b-a4b-it:free",
+  "resolvedModel": "google/gemma-4-26b-a4b-it:free",
+  "promptVersion": "3",
+  "recordedAt": "2026-08-14T16:10:18.580Z"
+}

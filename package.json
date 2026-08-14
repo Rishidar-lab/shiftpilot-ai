@@ -19,7 +19,9 @@
     "db:generate": "pnpm --filter @shiftpilot/api db:generate",
     "db:migrate": "pnpm --filter @shiftpilot/api db:migrate",
     "eval:claude": "pnpm --filter @shiftpilot/api eval:claude",
-    "smoke:claude": "pnpm --filter @shiftpilot/api smoke:claude"
+    "smoke:claude": "pnpm --filter @shiftpilot/api smoke:claude",
+    "eval:openrouter": "pnpm --filter @shiftpilot/api eval:openrouter",
+    "smoke:openrouter": "pnpm --filter @shiftpilot/api smoke:openrouter"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
