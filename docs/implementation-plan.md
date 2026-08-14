@@ -102,11 +102,11 @@ one concern, mergeable independently).
 
 ## M2 — Provider + validation pipeline + intake API + review UI (as-built)
 
-> **Status (2026-08-12):** A-01, A-02, A-03, and the M3 intake/persistence/API/UI work were
+> **Status (2026-08-13):** A-01, A-02, A-03, and the M3 intake/persistence/API/UI work were
 > built together as one milestone (capture → extract → review → approve). The `claude`
-> provider (A-04) and the live-fixture/drift test (A-05/A-06) are **deferred to M3** — the
-> `AiProvider` interface and `ShiftContext` are shaped so a real provider drops in later with
-> zero changes to domain/API/UI.
+> provider (A-04) was then implemented in Phase C with zero changes to domain/API/UI, exactly
+> as the `AiProvider` interface + `ShiftContext` shape promised. What remains open is the
+> **live call evidence** (A-05/A-06), which needs credentials.
 
 ### A-01 · AiProvider interface + failure types — **done**
 
@@ -125,8 +125,9 @@ one concern, mergeable independently).
   duration parsing, **verbatim** deadline hints, `#n` + free-text dependency parsing,
   ambiguity flags), `meta` is an honest property (`isFake: true`, label `"Fake (offline
 heuristic) — simulated, not a real LLM"`, `promptVersion: "fake-1"`), `forcedFailure`
-  injection. `fake.test.ts`. `generateHandover` returns a deterministic summary; it is not
-  yet called by any use case (AI handover prose is M3).
+  injection. `fake.test.ts`. `generateHandover` returns a deterministic summary; it is wired
+  into `getHandoverNarrative` (`apps/api/src/use-cases/plan.ts`) with the same degraded-mode
+  discipline as extraction.
 
 ### A-04 · ClaudeProvider (behind the interface) — **implemented; live call outstanding**
 
@@ -148,9 +149,10 @@ heuristic) — simulated, not a real LLM"`, `promptVersion: "fake-1"`), `forcedF
   labelling, contract conformance, absence of credential-shaped material, and that no fixture
   contains a resolved instant where a verbatim hint belongs. All six shipped fixtures are
   labelled `"synthetic"` — hand-written to the contract, **not** captured from a model.
-- `pnpm capture:fixtures` records real responses as `"recorded"` fixtures (with model, prompt
-  version and timestamp); `pnpm eval:claude` runs the 16-case corpus in
-  `apps/api/src/eval/corpus.ts`. Both refuse to run without `ANTHROPIC_LIVE=1`.
+- `pnpm eval:claude` runs the 17-case corpus in `apps/api/src/eval/corpus.ts` and writes the
+  clean cases from `FIXTURE_CANDIDATES` as `"recorded"` fixtures (with model, prompt version
+  and timestamp) as a side effect of a live run. It refuses to run without
+  `ANTHROPIC_LIVE=1`.
 
 ### Intake API + persistence + UI — **done (was M3 P-0x)**
 
@@ -158,7 +160,7 @@ heuristic) — simulated, not a real LLM"`, `promptVersion: "fake-1"`), `forcedF
 - `use-cases/intake.ts`: `captureIntake` (persists `raw_inputs` **before** provider call,
   timeout-wrapped → `ProviderError`), `getIntake`, `approveIntake` (transaction: drafts → M1
   `Task` + dependency resolution). `routes/intake.ts`, `errors.ts` (`ProviderError` →
-  503/502/402), `ai.ts` factory. `intake.test.ts` (10 cases).
+  503/502/402), `ai.ts` factory. `intake.test.ts` (18 cases).
 - Web: `api/client.ts` (zod decode at boundary, `IntakeResult`/`ApprovalResult`),
   `use-async.ts`, `IntakeView` (extract → editable review cards → approve), `PlanView`,
   `HandoverView`, `FakeProviderBadge`; `App.tsx` tabs + shift list.
@@ -203,11 +205,14 @@ above. **A-01 remains open**: no live Claude request has been made from this rep
 the Week-1 "real AI integration" requirement is not yet demonstrated. Everything needed to
 demonstrate it is in place and gated behind credentials.
 
-## M3 — Handover persistence + live `claude` provider (remaining)
+## M3 — Live provider evidence + deferred items (remaining)
 
-> Intake persistence + API + UI were completed as part of M2 (see M2 tail). M3 now covers the
-> remaining items: handover storage, the real `claude` provider behind the existing interface,
-> and the recorded-fixture/drift contract tests (A-04/A-05/A-06).
+> Intake persistence + API + UI were completed as part of M2 (see M2 tail), and Phase C
+> implemented the real `claude` provider, versioned prompts, structured output, failure
+> mapping and the gated evaluation tooling. What remains in M3 is **producing the live
+> evidence** — an actual API call, recorded as fixtures, plus the drift/contract check — and
+> the deferred items below (handover storage stays a derived projection + on-demand narrative
+> for now; the P-0x checklist below shipped with M2/Phase C in the shapes noted there).
 
 ### P-01 · DB schema + migrations (Drizzle/better-sqlite3)
 

@@ -297,7 +297,7 @@ Two implementations:
   and urgency keywords, duration parsing, `#n` + free-text dependency references). It
   reports deadline **phrases verbatim** (`deadlineHint: "by 3pm"`) and deliberately performs
   no date arithmetic: resolving a phrase to an instant is domain policy
-  (`packages/domain/src/time.ts`), so this provider and a future Claude provider cannot
+  (`packages/domain/src/time.ts`), so this provider and the Claude provider cannot
   disagree about what the same words mean. `isFake: true`, `label` is the honest string
   `"Fake (offline heuristic) — simulated, not a real LLM"`, and `promptVersion` is recorded
   (`"fake-1"`) so every extraction is traceable to the exact heuristic. It supports
@@ -380,12 +380,13 @@ outcomes are recorded. Producing that evidence requires credentials:
 
 ```sh
 ANTHROPIC_LIVE=1 ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=<id> pnpm eval:claude
-ANTHROPIC_LIVE=1 ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=<id> pnpm capture:fixtures
 ```
 
-Both refuse to run without the explicit opt-in flag, so neither `pnpm test` nor CI can ever
-trigger a paid call. `FakeAiProvider` remains the default for CI, dev and demos: no code path
-requires a key for the product to work.
+Both this and `pnpm smoke:claude` refuse to run without the explicit opt-in flag, so neither
+`pnpm test` nor CI can ever trigger a paid call. A live `eval:claude` run also records its
+clean candidate cases as `"source": "recorded"` fixtures under `packages/provider/fixtures/`.
+`FakeAiProvider` remains the default for CI, dev and demos: no code path requires a key for
+the product to work.
 
 ## 6. Structured-output validation (the trust boundary)
 
@@ -443,12 +444,15 @@ Retry policy: full-shape/schema failures → immediate `failed` (the heuristic f
 auto-retry; a real provider would retry ≤2 at the API layer). After failure: status `failed`,
 raw text retained, UI offers "re-extract" (same pipeline).
 
-Handover output (M3) will be validated at prose level: must not exceed caps; any task title
-or ID in the draft not present in the facts set is stripped; the deterministic fact panels are
-rendered by the client from stored `facts` json, never from model prose.
+Handover narrative output is validated at prose level: must not exceed caps; any task title
+or ID in the draft not present in the facts set is stripped (see
+`normalizeHandoverNarrative` in `packages/domain/src/handover.ts`); the deterministic fact
+panels are rendered by the client from `facts`, never from model prose.
 
-> Note: the `claude` provider is not yet implemented, so the live-retry/recorded-fixture drift
-> detector described earlier is deferred to M3. The `FakeAiProvider` path is fully tested.
+> Note: the `claude` provider is implemented but no **live** call has been made, so the
+> live-retry/recorded-fixture drift evidence described earlier is deferred to M3. The
+> `FakeAiProvider` path is fully tested, and the recorded-fixture path is exercised by the
+> fixture integrity tests.
 
 ## 7. Failure cases
 

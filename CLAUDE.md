@@ -108,7 +108,7 @@ and `.env.example`. Switching providers requires configuration, never code chang
 - Structured outputs are a constraint, not a guarantee: never remove zod or domain policy
   because the provider claims a schema. `ExtractionCandidate` stays `.strict()` — fix the
   prompt or the provider transformation, not the contract.
-- Scripts that spend money (`eval:claude`, `capture:fixtures`) must stay gated behind an
+- Scripts that spend money (`eval:claude`, `smoke:claude`) must stay gated behind an
   explicit opt-in flag and must never be reachable from `pnpm test` or CI.
 - A fixture is `"recorded"` only if a real API response produced it. Never relabel a
   synthetic fixture, and never describe one as having come from a model.

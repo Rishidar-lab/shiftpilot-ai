@@ -11,11 +11,12 @@ Last updated: 2026-08-13.
 - **Monorepo**: pnpm workspaces, strict TS, project references.
 - **Packages**: `packages/contracts` (zod schemas + inferred types), `packages/domain`
   (deterministic planning, extraction and shift-local time engines), `packages/provider`
-  (`AiProvider` interface + `FakeAiProvider`).
+  (`AiProvider` interface + `FakeAiProvider` + `ClaudeProvider`).
 - **Apps**: `apps/api` (Fastify + Drizzle/better-sqlite3), `apps/web` (React + Vite SPA).
 - **Git identity**: repo-local `Rishi <ID+rishidar-lab@users.noreply.github.com>`.
-- **No remote.** Do not push. No CI secrets. `AI_PROVIDER=claude` is a boot-time error
-  until the real provider lands in M3.
+- **No remote.** Do not push. No CI secrets. `AI_PROVIDER=claude` boots normally when key +
+  model are configured (and fails fast without them); the one missing piece is a **live
+  call** through the pipeline.
 
 ### Verification commands (all offline, no network/keys)
 
@@ -64,10 +65,11 @@ documentation drift). Phase B fixed every confirmed behavioural, integrity, secu
 and documentation defect, each with a regression test where testable. The per-finding record
 lives in `docs/implementation-plan.md` ("Phase B — adversarial audit remediation").
 
-**The one blocker that remains open by design is A-01: there is still no real AI
-integration.** `FakeAiProvider` is the only implementation, and `AI_PROVIDER=claude` fails
-fast at boot. Week 1 cannot be considered submission-ready until a real Claude call has
-succeeded through this pipeline (M3 / Phase C).
+**The one blocker that remains open is A-01: no live Claude call has been made through this
+pipeline yet.** `FakeAiProvider` and `ClaudeProvider` are both implemented behind one
+interface, and `AI_PROVIDER=claude` fails fast without credentials — but the real-API-call
+evidence the Week-1 brief asks for has not been produced. Week 1 is not submission-ready
+until a live call succeeds (M3 / Phase C tail).
 
 ### Known limitations that are deliberate, not defects
 

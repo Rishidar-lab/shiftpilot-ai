@@ -12,6 +12,23 @@ extraction, priority reasoning, dependency detection, execution sequencing, dail
 > tests and evaluation corpus are in place, but the run that would prove a genuine API
 > interaction needs credentials (see "Verifying a real Claude call" below).
 > `docs/implementation-plan.md` is the source of truth for build order.
+> Week-1 deliverable for the Innovation Hacks AI Internship 2026. Submission evidence:
+> `docs/week1-submission-matrix.md`, `docs/rubric-self-review.md`, `docs/demo-script.md`.
+
+## The pipeline at a glance
+
+```mermaid
+flowchart LR
+  A["Messy shift text"] --> B["raw_inputs persisted first"]
+  B --> C["AI provider (fake or Claude)"]
+  C -->|"untrusted JSON"| D["zod + domain policy"]
+  D --> E["Reviewable drafts"]
+  E -->|"human approves"| F["Operational tasks"]
+  F --> G["Deterministic planner"]
+  G --> H["Plan · What next · Handover"]
+```
+
+"AI interprets. Human verifies. Deterministic software decides."
 
 ## Stack
 
@@ -47,8 +64,8 @@ The model reads language. The code decides everything operational.
 
 A provider therefore reports the **verbatim** phrase it saw (`deadlineHint: "by 2pm"`); it
 never returns an instant. Resolving that phrase against the shift's date and IANA time zone
-is deterministic domain logic, so the offline provider and a future Claude provider cannot
-disagree about what the same words mean.
+is deterministic domain logic, so the fake and Claude providers cannot disagree about what
+the same words mean.
 
 ## Time semantics
 
@@ -122,8 +139,10 @@ ANTHROPIC_LIVE=1 ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=<id> pnpm eval:claude
 
 It refuses to run without the explicit `ANTHROPIC_LIVE=1` opt-in, records what actually
 happened per case, and computes **no accuracy score** — there is no labelled ground truth
-here, and a percentage without one would be invented confidence. `pnpm capture:fixtures` is
-gated the same way and records real responses as `"source": "recorded"` fixtures.
+here, and a percentage without one would be invented confidence. A live run also writes a
+small set of clean case responses into `packages/provider/fixtures/` as
+`"source": "recorded"` fixtures — there is no separate capture command; recording happens
+on a live eval run.
 
 ## Cost and safety controls
 
@@ -166,8 +185,10 @@ test. **CI needs no secrets and makes no paid API calls.**
   contract tests, fixtures and evaluation corpus exist and are exercised offline, but the
   genuine-API-interaction evidence the Week-1 brief asks for requires credentials and has
   not been produced. Every fixture in the repo is labelled `"source": "synthetic"`.
-- **AI handover prose is not implemented.** Handover is deterministic facts only; the
-  Claude provider returns a typed "not implemented" failure for it rather than a placeholder.
+- **AI handover prose is implemented, with a degraded mode.** The narrative is drafted from
+  the deterministic facts only — the model never sees counts or history the database did not
+  already prove — and a provider outage or invalid output yields an explicitly labelled
+  degraded response. The facts always render; the prose is allowed to disappear.
 - **No monetary budget enforcement** — see Cost and safety controls.
 - Deadline vocabulary is finite; unrecognised phrases are flagged for the reviewer instead
   of being guessed.
@@ -178,5 +199,7 @@ test. **CI needs no secrets and makes no paid API calls.**
 ## Design
 
 `docs/architecture.md` (analysis, models, AI boundaries, validation, failure cases,
-testing) · `docs/implementation-plan.md` (milestones) · `CLAUDE.md` (engineering rules,
-security requirements, definition of done).
+testing) · `docs/implementation-plan.md` (milestones) · `docs/demo-script.md` +
+`docs/demo-seed-data.md` (reproducible offline demo) · `docs/interview-defense.md`
+(rationale + hard questions) · `CLAUDE.md` (engineering rules, security requirements,
+definition of done).
