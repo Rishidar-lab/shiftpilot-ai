@@ -20,9 +20,13 @@ try {
 
   app
     .listen({ port: config.port, host: config.host })
-    .then((address) => {
+    .then(() => {
+      // The CONFIGURED bind, not the first address fastify resolves: with
+      // HOST=0.0.0.0 that first address is 127.0.0.1, which reads like the
+      // server is loopback-only to anyone debugging why a container is
+      // unreachable. Fastify still logs every interface it bound.
       app.log.info(
-        `ShiftPilot API listening on ${address} ` +
+        `ShiftPilot API listening on ${config.host}:${config.port} ` +
           `(provider=${provider.meta.id}, web=${config.webRoot ?? "not served"})`,
       )
     })
