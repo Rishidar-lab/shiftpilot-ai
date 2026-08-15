@@ -1,7 +1,11 @@
 import { defineConfig } from "tsup"
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  // Two entries: the server, and a standalone migration runner. The runner is
+  // COMPILED on purpose — `pnpm db:migrate` goes through tsx, a devDependency
+  // that a production install does not have, so a deployment must never depend
+  // on it. `node dist/db/migrate.js` needs nothing but the runtime deps.
+  entry: ["src/index.ts", "src/db/migrate.ts"],
   format: ["esm"],
   platform: "node",
   target: "node22",

@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env src/db/migrate.ts",
+    "db:migrate:prod": "node dist/db/migrate.js",
     "eval:claude": "tsx --env-file-if-exists=.env src/eval/run-eval.ts",
     "smoke:claude": "tsx --env-file-if-exists=.env src/eval/smoke.ts",
     "eval:openrouter": "tsx --env-file-if-exists=.env src/eval/run-eval.ts",
@@ -24,6 +25,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",
+    "@fastify/static": "^10.1.3",
     "@shiftpilot/contracts": "workspace:*",
     "@shiftpilot/domain": "workspace:*",
     "@shiftpilot/provider": "workspace:*",
