@@ -217,6 +217,20 @@ pnpm dev              # API on :8787, web app on :5173
 
 The web app is at `http://localhost:5173`. In fake mode everything works with no `.env`.
 
+### Running the production build
+
+One container serves the browser app and the API from a single origin — no reverse proxy,
+no second process:
+
+```sh
+docker build -t shiftpilot .
+docker run -d -p 8080:8787 -v shiftpilot-data:/data shiftpilot
+```
+
+Then open `http://localhost:8080`. Migrations run from a compiled runner before the server
+starts, and the database lives on the mounted volume. `docs/deployment.md` has the
+environment contract, the failure behaviour, and platform-specific steps.
+
 ### Environment setup
 
 Configuration is read from the process environment by the API at boot, validated by zod
@@ -318,8 +332,24 @@ MIT — see `LICENSE`.
 
 ## Screenshots
 
-Placeholders — replace before publishing:
+Captured from the production build running in its container, on the offline provider — the
+"Simulated AI · no real LLM" badge is in frame because that is what the run was.
 
-- `docs/screenshots/capture.png` — messy text capture
-- `docs/screenshots/review.png` — review and approval of extracted candidates
-- `docs/screenshots/plan.png` — deterministic plan with What Next
+**Natural-language intake** — the worker's messy dump, before anything is structured:
+
+![Intake screen with a messy shift dump typed into the textarea](docs/screenshots/01-intake.png)
+
+**Review** — every extracted candidate is editable, rejectable, and shows its provenance
+(deadline hint, whether an estimate was stated or inferred, ambiguity flags):
+
+![Review screen listing extracted task candidates with edit and approve controls](docs/screenshots/02-review.png)
+
+**Deterministic plan** — ordering, priority bands, dependency waits, overdue markers, "next
+up" with its reasons, and the capacity warning when the day does not fit:
+
+![Work plan with a sequenced task list, priority badges and capacity warnings](docs/screenshots/03-plan.png)
+
+**Handover** — deterministic facts computed from the database, with an optional AI summary
+clearly labelled as drafted _from_ those facts:
+
+![Shift handover showing an AI-written summary above deterministic fact panels](docs/screenshots/04-handover.png)
