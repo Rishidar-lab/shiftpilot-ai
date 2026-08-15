@@ -1,0 +1,34 @@
+# Never send these to the build context. Secrets first: an image layer keeps
+# whatever it was given, even if a later layer deletes it.
+.env
+.env.*
+!.env.example
+
+# Installed and built per stage inside the image.
+node_modules
+**/node_modules
+dist
+**/dist
+build
+out
+
+# Local runtime data — a developer's database must never end up in an image.
+data
+.ci-data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# History, tooling and editor state.
+.git
+.github
+.vscode
+.idea
+.DS_Store
+coverage
+
+# Documentation and screenshots are not needed to run the server.
+docs
+*.md
+!README.md
