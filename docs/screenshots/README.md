@@ -1,20 +1,19 @@
 # Screenshots
 
-Empty on purpose: no screenshots are committed yet, and the README links to these three
-paths. Capture them from a local run (`pnpm dev`, fake provider) before publishing, or
-remove the Screenshots section from the README so it does not link to files that do not
-exist.
+Real captures of the running application, taken with Playwright against the production
+container (`docker run` of this repository's `Dockerfile`) on the offline `FakeAiProvider`.
+Nothing here is a mockup, and nothing is retouched.
 
-| File          | What to capture                                                             |
-| ------------- | --------------------------------------------------------------------------- |
-| `capture.png` | The Intake screen with the messy paste block from `docs/demo-seed-data.md`  |
-| `review.png`  | The review list: dispositions, ambiguity flags, an edit in progress         |
-| `plan.png`    | The deterministic plan with What Next and the "does not fit" warning banner |
+| File              | Screen                                                          |
+| ----------------- | --------------------------------------------------------------- |
+| `01-intake.png`   | Natural-language intake with the messy shift dump               |
+| `02-review.png`   | Extraction review: dispositions, provenance, ambiguity flags    |
+| `03-plan.png`     | Deterministic plan, priority bands, What Next, capacity warning |
+| `04-handover.png` | Handover facts with the labelled AI summary                     |
 
-Two rules when capturing:
+The header badge reads **"Simulated AI · no real LLM"** because these runs used the offline
+provider. It stays in frame on purpose: mislabelling simulated output as a real model is the
+one thing this project is built not to do.
 
-- The header badge must read **"Simulated AI · no real LLM"** if the run is on the fake
-  provider. Do not crop it out — mislabelling simulated output as a real model is the one
-  thing this project is built not to do.
-- No credentials, no terminal with an exported key, no browser tab showing a provider
-  console.
+To re-capture after a UI change, run the app (`pnpm dev`, or the container) and take the
+same four screens at 1280px wide.
