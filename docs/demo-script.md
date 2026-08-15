@@ -3,9 +3,21 @@
 Goal: show the value arc immediately, then prove the trust model. The default run is fully
 offline on `FakeAiProvider` (no network, no key, no cost). A recording may optionally
 exercise the **verified free OpenRouter route** for one extraction shot — never showing a
-key, `.env`, or any credential on screen. Prerequisites: `pnpm dev` running (api :8787,
-web :5173), seed block from `docs/demo-seed-data.md` ready to paste. No code is scrolled
-on screen at any point.
+key, `.env`, or any credential on screen.
+
+**Where to record.** Either works:
+
+- **Local** — `pnpm dev` (api :8787, web :5173), or the production container on
+  `http://localhost:8080`.
+- **The deployed demo** — the live `*.onrender.com` URL once the service is running.
+
+If you record against the deployed demo, two rules. **Wake it first:** free instances spin
+down after inactivity and cold-start in roughly 30–60 seconds — open the URL, wait for the
+app, and only then hit record, or the video opens on a spinner. **Never show the Render
+dashboard**, its Environment tab, or any settings page: that is where the secret lives.
+
+Prerequisites: seed block from `docs/demo-seed-data.md` ready to paste. No code and no
+terminal with environment variables is scrolled on screen at any point.
 
 ## 0:00–0:20 — Problem
 

@@ -1,9 +1,10 @@
 # LinkedIn post — draft (do not publish; fill placeholders first)
 
-**Status: DRAFT.** Publish only after the repo is public and the demo video URL exists.
-Replace every `[PLACEHOLDER]`. Do not invent URLs. Tag **Innovation Hacks** (and the
-internship hashtags used by the program). Target audience: technical recruiters and the
-Innovation Hacks review panel. ~200 words; screenshot or short video preferred.
+**Status: DRAFT — do not publish yet.** The GitHub URL below is real. The live demo and
+demo-video links are still placeholders and must be filled with the URLs Render and your
+video host actually issue — do not guess them. Tag **Innovation Hacks** (and the internship
+hashtags the program uses). Audience: technical recruiters and the Innovation Hacks review
+panel. ~200 words; screenshot or short video preferred.
 
 ---
 
@@ -29,13 +30,18 @@ ShiftPilot turns that dump into an ordered, explainable work plan — with one r
   outage degrades gracefully and honestly; the app never pretends the AI is on when it is
   not.
 
-Stack: TypeScript strict · React + Vite · Fastify · SQLite (Drizzle) · pnpm monorepo ·
-Vitest. 283 tests, fully offline CI, no secrets in CI.
+It also ships as one deployable service — the React app and the API on a single origin,
+in one container — so the whole thing runs from a single free instance.
+
+Stack: TypeScript strict · React + Vite · Fastify · SQLite (Drizzle) · Zod · pnpm monorepo ·
+Vitest. 293 tests, fully offline CI, no secrets in CI.
 
 Verified live: a controlled 16/16 evaluation of the free-tier OpenRouter route (smoke
 HTTP 2xx; recorded fixtures; reports in the repo).
 
-Repo: [link to github.com/your-user/shiftpilot-ai] · Demo: [link to demo video]
+Repo: https://github.com/Rishidar-lab/shiftpilot-ai
+Live demo: [PLACEHOLDER — the real *.onrender.com URL, once the service is running]
+Video: [PLACEHOLDER — the demo video URL, once recorded]
 
 #InnovationHacks #AIInternship2026 #AIBuild #OpenSource #TypeScript
 
@@ -43,7 +49,10 @@ Repo: [link to github.com/your-user/shiftpilot-ai] · Demo: [link to demo video]
 
 ## Rules for publishing
 
-- Only after checklist item 1 (key rotation) is done and item 2 (public repo) is pushed.
+- The repo is public and its URL above is final. Both remaining links are placeholders:
+  publish only once each has been replaced with a URL that actually resolves.
+- Mention the live demo only if it is up. Free instances cold-start after inactivity — open
+  the link and let it wake before posting, so the first visitor does not meet a spinner.
 - Keep the exact claims: controlled verification, not a benchmark; no accuracy
   percentages; no "production-ready"; free tier only; no Claude claim.
 - Do not publish with placeholders — if the repo or video is not ready, wait.
