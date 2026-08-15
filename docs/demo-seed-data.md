@@ -89,3 +89,21 @@ The scenario supports three "pause here" states, each independently reproducible
 
 Everything is deterministic and offline: re-create the shift and paste the block again.
 The same drafts, warnings and plan come back every time.
+
+## Optional: one real extraction on the verified free route
+
+The offline run is the primary demo (zero cost, fully reproducible). If a single real
+extraction is wanted for a recording, boot with
+
+```sh
+AI_PROVIDER=openrouter OPENROUTER_MODEL=google/gemma-4-26b-a4b-it:free \
+  OPENROUTER_API_KEY=<from your environment, never typed on screen> pnpm dev
+```
+
+`google/gemma-4-26b-a4b-it:free` is the explicitly configured `:free` model used by the
+verified 16/16 evaluation (`docs/eval/results.md`). The free-only guard rejects every
+other kind of model, and a rate-limited route fails loudly rather than falling back.
+The paste block above is the same input the evaluation corpus covers, so a reviewer can
+see the same seed data produce structure through a real model. Do not show the key or
+`.env` on camera; expect some variance versus the deterministic table above — free routes
+have shared quotas and `openrouter/free` additionally rotates across the free pool.

@@ -1,6 +1,9 @@
 # SHIFT PILOT — Architecture
 
-Status: M3 in progress (Claude provider implemented, live call not yet made) · Last updated: 2026-08-13
+Status: M3 complete — live external AI verified on the OpenRouter free tier only
+(`docs/eval/results.md`, 16/16 corpus + handover, Aug 2026). Claude adapter remains
+implemented but unexercised (no Anthropic credential has ever been used here). ·
+Last updated: 2026-08-15
 Companion docs: `../CLAUDE.md` (rules), `./implementation-plan.md` (tasks).
 
 ---
@@ -345,7 +348,8 @@ the offline provider — a silent downgrade would let simulated output pass for 
 ### Prompt versioning
 
 The prompt lives in `packages/provider/src/prompt.ts`, never inline at a call site, and
-exports `EXTRACTION_PROMPT_ID` + `EXTRACTION_PROMPT_VERSION` (`claude-1`). Both are persisted
+exports `EXTRACTION_PROMPT_ID` + `EXTRACTION_PROMPT_VERSION` (v3 for both extraction and
+handover, with the JSON schema embedded and a raw-JSON mandate). Both are persisted
 on every `raw_inputs` row, so any extraction can be traced to the exact instructions and
 output contract that produced it. The version bumps on any change to either.
 
@@ -371,22 +375,28 @@ be dropped in later without touching the domain, the API, or the UI.
 
 ### Live activation status
 
-Implemented: the provider, the versioned prompt, structured output, failure mapping, cost
-controls, offline contract tests, an evaluation corpus and gated tooling.
+Implemented and live-verified (Week 1): the provider boundary, the versioned prompt
+(v3), structured output, failure mapping, cost controls, offline contract tests, the
+evaluation corpus, and gated tooling. The **OpenRouter route is verified on the free
+tier only**: a one-request smoke test returned HTTP 2xx against `openrouter/free`, and a
+controlled evaluation ran the full 16-case corpus plus handover 16/16 on
+`google/gemma-4-26b-a4b-it:free`, with every request guarded by
+`assertFreeOpenRouterModel` (free ids only; paid models rejected; no paid fallback).
+Reports and sanitized evidence: `../eval/results.md`, `../eval/verification-summary.md`,
+and `packages/provider/fixtures/extraction/recorded-*.json` (labelled
+`"source": "recorded"`, each carrying configured and resolved model).
 
-**Not yet done: an actual API call.** No live Claude request has been made from this
-repository, so every fixture is labelled `"source": "synthetic"` and no observed extraction
-outcomes are recorded. Producing that evidence requires credentials:
+The **Claude adapter is implemented but unexercised**: no live Claude request has been
+made from this repository, and no Anthropic credential has ever been used here. Running
+it requires credentials:
 
 ```sh
 ANTHROPIC_LIVE=1 ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=<id> pnpm eval:claude
 ```
 
-Both this and `pnpm smoke:claude` refuse to run without the explicit opt-in flag, so neither
-`pnpm test` nor CI can ever trigger a paid call. A live `eval:claude` run also records its
-clean candidate cases as `"source": "recorded"` fixtures under `packages/provider/fixtures/`.
-`FakeAiProvider` remains the default for CI, dev and demos: no code path requires a key for
-the product to work.
+Both this and `pnpm smoke:claude` refuse to run without the explicit opt-in flag, so
+neither `pnpm test` nor CI can ever trigger a paid call. `FakeAiProvider` remains the
+default for CI, dev and demos: no code path requires a key for the product to work.
 
 ## 6. Structured-output validation (the trust boundary)
 

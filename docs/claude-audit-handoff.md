@@ -65,11 +65,16 @@ documentation drift). Phase B fixed every confirmed behavioural, integrity, secu
 and documentation defect, each with a regression test where testable. The per-finding record
 lives in `docs/implementation-plan.md` ("Phase B — adversarial audit remediation").
 
-**The one blocker that remains open is A-01: no live Claude call has been made through this
-pipeline yet.** `FakeAiProvider` and `ClaudeProvider` are both implemented behind one
-interface, and `AI_PROVIDER=claude` fails fast without credentials — but the real-API-call
-evidence the Week-1 brief asks for has not been produced. Week 1 is not submission-ready
-until a live call succeeds (M3 / Phase C tail).
+**The one blocker that was open was A-01: no live API call through this pipeline.** It was
+subsequently **closed on the OpenRouter free tier**: smoke HTTP 2xx on `openrouter/free`
+and a controlled 16/16 corpus + handover on `google/gemma-4-26b-a4b-it:free`, with the
+free-only guard enforced on every request (`docs/eval/results.md`,
+`docs/eval/verification-summary.md`, `docs/eval/live-eval-evidence.md`). `ClaudeProvider`
+remains implemented behind the same interface but **unexercised** — no Anthropic
+credential has ever been used here, and `AI_PROVIDER=claude` fails fast without
+credentials. Week 1 is submission-ready on the verified free OpenRouter route; the Claude
+live call is a one-command follow-up (`ANTHROPIC_LIVE=1 AI_PROVIDER=claude
+pnpm eval:claude`).
 
 ### Known limitations that are deliberate, not defects
 

@@ -129,7 +129,7 @@ heuristic) — simulated, not a real LLM"`, `promptVersion: "fake-1"`), `forcedF
   into `getHandoverNarrative` (`apps/api/src/use-cases/plan.ts`) with the same degraded-mode
   discipline as extraction.
 
-### A-04 · ClaudeProvider (behind the interface) — **implemented; live call outstanding**
+### A-04 · ClaudeProvider (behind the interface) — **implemented; not exercised**
 
 - `packages/provider/src/claude.ts` on the official Anthropic TypeScript SDK, behind the
   unchanged `AiProvider` interface. Server-side only; `apps/web` does not depend on the
@@ -137,22 +137,27 @@ heuristic) — simulated, not a real LLM"`, `promptVersion: "fake-1"`), `forcedF
   AbortSignal-backed timeout, bounded retries (SDK backoff, no second layer), required
   `ANTHROPIC_API_KEY` + `ANTHROPIC_MODEL` with no in-code model default, fail-fast boot and
   no silent fallback to the fake provider.
-- `packages/provider/src/prompt.ts` — versioned prompt (`shiftpilot.task-extract` /
-  `claude-1`) with the JSON output contract; both ids persisted per intake.
-- **Outstanding: no live API call has been made.** Fixtures are all synthetic and no observed
-  extraction outcomes are recorded. `pnpm eval:claude` (gated by `ANTHROPIC_LIVE=1`) produces
-  that evidence once credentials exist.
+- `packages/provider/src/prompt.ts` — versioned prompt (v3 for both `shiftpilot.task-extract`
+  and `shiftpilot.handover`, schema embedded, raw-JSON mandate); both ids persisted per
+  intake.
+- **Claude live call outstanding**: no Anthropic credential has ever been used here.
+  `pnpm eval:claude` (gated by `ANTHROPIC_LIVE=1`) is what produces that evidence later.
+- The **Week-1 verified live route is OpenRouter on the free tier only** — see
+  `docs/eval/results.md` (16/16) and the OpenRouter section in A-05.
 
-### A-05 / A-06 · Recorded fixtures + gated live test — **tooling done, recordings outstanding**
+### A-05 / A-06 · Recorded fixtures + gated live test — **done (OpenRouter free tier)**
 
 - `packages/provider/fixtures/` with a loader and an integrity test asserting provenance
   labelling, contract conformance, absence of credential-shaped material, and that no fixture
-  contains a resolved instant where a verbatim hint belongs. All six shipped fixtures are
-  labelled `"synthetic"` — hand-written to the contract, **not** captured from a model.
-- `pnpm eval:claude` runs the 17-case corpus in `apps/api/src/eval/corpus.ts` and writes the
+  contains a resolved instant where a verbatim hint belongs. Six fixtures are labelled
+  `"source": "recorded"` — captured from the live OpenRouter free-route evaluation
+  (`google/gemma-4-26b-a4b-it:free`), each carrying configured + resolved model and prompt
+  version; the rest are labelled `"synthetic"` — hand-written to the contract.
+- `pnpm eval:openrouter` runs the corpus in `apps/api/src/eval/corpus.ts` and writes the
   clean cases from `FIXTURE_CANDIDATES` as `"recorded"` fixtures (with model, prompt version
-  and timestamp) as a side effect of a live run. It refuses to run without
-  `ANTHROPIC_LIVE=1`.
+  and timestamp) as a side effect of a live run. It is guarded by
+  `assertFreeOpenRouterModel`: only `openrouter/free` or `<vendor>/<model>:free` ids, no
+  paid fallback. `pnpm eval:claude` remains gated by `ANTHROPIC_LIVE=1`.
 
 ### Intake API + persistence + UI — **done (was M3 P-0x)**
 
@@ -194,25 +199,31 @@ An adversarial audit of M0–M2 found 28 findings. Fixed in Phase B:
 - **CI/docs**: format check + fresh-DB migration smoke added; component tests added; all
   documentation reconciled with the code that exists.
 
-Still open after Phase B: A-01 (no real AI integration — M3), coverage thresholds (H-01),
-demo script + seed (H-02), and everything listed under M3/M4/M5 below.
+Still open after Phase B: real AI integration (M3 — now closed for OpenRouter, see Phase C),
+coverage thresholds (H-01), demo script + seed (H-02), and everything listed under M3/M4/M5
+below.
 
-## Phase C — real Claude provider (2026-08-13)
+## Phase C — real AI provider, OpenRouter free tier verified (2026-08-13 → 2026-08-14)
 
-Implemented the ClaudeProvider, the versioned prompt, structured output, failure mapping,
-estimate provenance, fixtures, the evaluation corpus and gated live tooling — see A-04/A-05
-above. **A-01 remains open**: no live Claude request has been made from this repository, so
-the Week-1 "real AI integration" requirement is not yet demonstrated. Everything needed to
-demonstrate it is in place and gated behind credentials.
+Implemented the ClaudeProvider, the versioned prompt (v3), structured output, failure
+mapping, estimate provenance, fixtures, the evaluation corpus and gated live tooling — see
+A-04/A-05 above. **A-01 is closed for the Week-1 requirement**: the live route is OpenRouter
+on the free tier only. A one-request smoke test against `openrouter/free` returned HTTP 2xx
+(resolved `poolside/laguna-s-2.1:free`), and the controlled 16-case corpus + handover ran
+16/16 on `google/gemma-4-26b-a4b-it:free` with the free-only guard enforced on every request
+(reports: `docs/eval/`; recorded fixtures in `packages/provider/fixtures/extraction/`). The
+Claude adapter remains implemented but unexercised — no Anthropic credential has ever been
+used here, and it is not claimed as verified.
 
 ## M3 — Live provider evidence + deferred items (remaining)
 
 > Intake persistence + API + UI were completed as part of M2 (see M2 tail), and Phase C
-> implemented the real `claude` provider, versioned prompts, structured output, failure
-> mapping and the gated evaluation tooling. What remains in M3 is **producing the live
-> evidence** — an actual API call, recorded as fixtures, plus the drift/contract check — and
-> the deferred items below (handover storage stays a derived projection + on-demand narrative
-> for now; the P-0x checklist below shipped with M2/Phase C in the shapes noted there).
+> implemented the real provider boundary (`claude` + `openrouter`), versioned prompts (v3),
+> structured output, failure mapping and the gated evaluation tooling. M3's live-evidence
+> requirement is **met on the OpenRouter free tier** (smoke HTTP 2xx; 16/16 controlled
+> corpus + handover; recorded fixtures; reports in `docs/eval/`). Remaining: the deferred
+> items below (handover storage stays a derived projection + on-demand narrative for now;
+> the P-0x checklist below shipped with M2/Phase C in the shapes noted there).
 
 ### P-01 · DB schema + migrations (Drizzle/better-sqlite3)
 

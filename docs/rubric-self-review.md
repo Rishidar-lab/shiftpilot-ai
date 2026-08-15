@@ -1,104 +1,108 @@
-# Week 1 Rubric Self-Review — SHIFT PILOT
+# Week 1 Rubric Self-Review — ShiftPilot
 
 Scoring is deliberately conservative: a dimension is only rated fully when its evidence is
 reproducible from this repository by a reviewer who trusts nothing the author says. Where a
 rubric dimension overlaps the submission matrix, the matrix is the source of truth.
 
-Scale used here: **Meets fully** / **Meets with gaps** / **Not yet**.
+The rubric's seven dimensions are scored against the verified state of 2026-08-15
+(commit `804a027` + final docs pass; 283 tests / 21 files green; live OpenRouter
+free-tier verification recorded in `docs/eval/`).
 
 ---
 
-## 1. Product & workflow completeness
+## 1. Technical implementation (max /25)
 
-**Rating: Meets fully.**
+**Claim: 22/25.**
 
-The product answers the brief's core scenario: a frontline worker dumps a messy shift into a
-box, the app structures it, and the human remains in control of what becomes real.
+| Requirement                      | Evidence                                                                                                                                      | Score |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| Full workflow runs end-to-end    | Capture → persist → extract → review → approve → plan → what-next → task actions → handover, offline and live (`apps/web` + `apps/api`)       | 6/6   |
+| Deterministic domain engines     | Priority, scheduling, dependencies, time, what-next, handover in `packages/domain` (zero runtime deps, table-driven tests)                    | 6/6   |
+| Real AI integration with a guard | OpenRouter free-tier only; `assertFreeOpenRouterModel` enforced at config, construction and per-request; no paid fallback (regression-tested) | 5/5   |
+| Human-in-the-loop enforced       | No task exists without explicit approval; transactional, atomic, duplicate-refused                                                            | 5/5   |
+| **Losses**                       | No auth/multi-user isolation; single-process SQLite; in-process rate limiter (documented Week-1 scoping)                                      | −3    |
 
-- Full loop works offline end-to-end: capture → extraction → review/edit → approve → plan →
-  what-next → task actions → handover (`apps/web` + `apps/api`, `FakeAiProvider`).
-- Deterministic planning (priority, dependencies, sequence, schedule, next) lives in
-  `packages/domain`, is derived on every request, and is covered by table-driven tests
-  (extraction 19, handover 18, schedule 16, priority 13, policy 12, time 11, next 8).
-- Edge states are first-class: blocked/reopened tasks, cycles, overflow, unresolved
-  deadlines, duplicate intents, failed extractions, degraded handover.
-- Human-in-the-loop is enforced, not decorative: no AI output becomes a Task without
-  explicit approval (`approveIntake`, transactional, atomic).
+## 2. AI/ML understanding (max /20)
 
-## 2. AI integration & evaluation
+**Claim: 17/20.**
 
-**Rating: Meets with gaps — the gap is the live call.**
+- Trust boundary is the product's spine: untrusted output → zod → policy → normalization →
+  shift-local resolution → human approval (`docs/architecture.md` §5–6). 6/6
+- Prompt engineering is deliberate: versioned v3 prompts with embedded JSON contract, raw
+  JSON mandate, worker text fenced as data; injection case in corpus + recorded fixture. 4/4
+- Honest evaluation discipline: 16-case corpus, per-case outcomes recorded, no invented
+  accuracy percentage, resolved-model reporting, contrast runs kept (alias 8/16, 429
+  recovery) — `docs/eval/`. 4/4
+- Live evidence: smoke HTTP 2xx + 16/16 controlled run on `google/gemma-4-26b-a4b-it:free`,
+  six recorded fixtures. 3/3
+- **Losses**: the verified route is free-tier OpenRouter (a capable `:free` model); the
+  Claude adapter is unexercised; no benchmark-grade methodology (no ground truth, no
+  statistical sample) — kept honest by design, still a limitation. −3
 
-- The integration itself is complete behind a 3-method interface
-  (`packages/provider/src/types.ts`): real Claude adapter, versioned prompt
-  (`shiftpilot.task-extract`/`claude-1`), structured output, full typed failure mapping,
-  timeout abort, bounded retries, no silent fallback.
-- The evaluation apparatus is complete and honest: 17-case corpus, gated live runner and
-  smoke test, fixture provenance that is load-bearing, and a documented refusal to compute an
-  accuracy percentage without ground truth.
-- **Gap:** no live API call has been made (needs credentials). This dimension cannot be rated
-  fully until `ANTHROPIC_LIVE=1 AI_PROVIDER=claude pnpm eval:claude` has run once. All
-  offline substitutes are in place and tested.
+## 3. Problem solving & design (max /15)
 
-## 3. Trust boundary & validation
+**Claim: 14/15.**
 
-**Rating: Meets fully.**
+- Core insight is sound and defended: "AI interprets. Human verifies. Deterministic software
+  decides." — every "smart" decision computed by tested engines, model never sets priority. 5/5
+- Hard problems solved: deadline resolution shift-locally with IANA timezones; dependency
+  chains incl. forward refs and cycles; overflow flagging; degraded handover; prompt
+  injection as data; duplicate intents; failure durability (raw input persisted first). 5/5
+- Adversarial audit executed (28 findings, fixes with regression tests). 4/4
+- **Loss**: stretch items (distributed limiter, owner-scoped shifts) are design notes, not
+  code. −1
 
-This is the dimension the product is built around, and it is the most heavily tested:
+## 4. Code quality & GitHub (max /15)
 
-- Provider output is `unknown` at the boundary and never trusted: envelope read → zod
-  (`.strict()`) → domain policy → clamping → normalization → dependency resolution →
-  `ExtractionDraft` re-parse before persistence (`runExtraction`).
-- Deadline phrases are verbatim; only `packages/domain/src/time.ts` resolves them, shift-
-  local and DST-correct.
-- The client cannot declare which provider ran; provenance is server-owned from provider
-  metadata.
-- Handover prose is drafted only from deterministic facts, and a narrative that invents a
-  task id is rejected (`apps/api/src/handover.test.ts`).
-- No raw user text is rendered as HTML; no key can reach a browser bundle.
+**Claim: 12/15.**
 
-## 4. Engineering quality
+- Strict TypeScript, ESLint (hooks rules as errors), Prettier clean, tsup + vite builds
+  green; layered architecture, `packages/domain` zero runtime deps. 5/5
+- 283 tests / 21 files, fully offline, in-memory SQLite, no `globalThis` mocks; CI runs all
+  gates + fresh-DB migration + idempotent re-migrate with no secrets. 5/5
+- Repo hygiene: `.gitignore` correct, `.env.example` only, secret scan (working tree, index,
+  history) clean, no `dist`/`node_modules`/DBs tracked. 2/3
+- **Losses**: repo is not yet public (external action); no coverage threshold in CI; no
+  LICENSE file (owner's choice, deferred to publication); private commit history not yet
+  reviewed by a third party. −3
 
-**Rating: Meets fully.**
+## 5. UI/UX (max /10)
 
-- 258 tests / 20 files, all green in ~2 s, fully offline, no mocks of the domain, no
-  `globalThis` hacks, in-memory SQLite for API tests, component tests for the web.
-- Strict TypeScript, ESLint with `react-hooks/exhaustive-deps` as error, Prettier clean,
-  tsup + vite builds green.
-- CI: install → lint → typecheck → format → test → build → fresh-DB migration smoke →
-  idempotent re-migrate. No secrets, no paid calls reachable.
-- Migrations 0000–0004 apply on a fresh DB and re-apply idempotently (proved by CI).
-- Layered architecture with a hard dependency rule; `packages/domain` has zero runtime deps.
-- An adversarial audit pass (28 findings) was performed and its confirmed defects fixed with
-  regression tests (`docs/implementation-plan.md` "Phase B").
+**Claim: 9/10.**
 
-**One acknowledged gap (non-blocking):** no coverage threshold in CI. Coverage is high and
-visible, but a red-threshold is not enforced.
+- Honest provider badge ("Simulated AI · no real LLM", from provider metadata); explicit
+  loading/error/retry states; editable review cards with source spans and ambiguity flags;
+  machine-readable "why" on What Next; degraded handover labelled; responsive layout,
+  labelled controls, live regions. 9/9
+- **Loss**: no recorded demo video yet; no polished screenshot set in the repo
+  (placeholders in README). −1
 
-## 5. Documentation
+## 6. Documentation (max /10)
 
-**Rating: Meets fully.**
+**Claim: 10/10.**
 
-- `README.md`: quickstart, provider modes, trust model, cost controls, honest limitations.
-- `docs/architecture.md`: problem analysis, data model, state machine, AI boundaries,
-  validation pipeline, failure-case table, testing strategy.
-- `docs/implementation-plan.md`: milestone-by-milestone build record including the audit.
-- `docs/demo-script.md` / `docs/demo-seed-data.md`: reproducible offline demo.
-- `docs/week1-submission-matrix.md`: this submission's own evidence ledger.
-- Consistency was re-verified against the code on 2026-08-14 (the "handover prose" and
-  "capture:fixtures" drift found in the final review was fixed in the same pass).
+- README (quickstart, modes, trust model, OpenRouter verification, cost controls,
+  limitations), `docs/architecture.md`, `docs/implementation-plan.md` (milestones + audit),
+  `docs/demo-script.md` + `docs/demo-seed-data.md`, `docs/interview-defense.md`,
+  `docs/rubric-self-review.md`, `docs/week1-submission-matrix.md`, `docs/eval/*` (reports +
+  evidence), `CLAUDE.md`. Re-verified consistent with code on 2026-08-15.
 
-## 6. Demo
+## 7. Communication (max /5)
 
-**Rating: Meets fully (offline).**
+**Claim: 4/5.**
 
-- Scripted 2–4 minute walkthrough, every step reproducible offline against the fake
-  provider, zero cost, no credentials (see `docs/demo-script.md`).
-- Covers the full value arc including rejection, editing, approval, dependency-aware
-  planning, completion, replanning and handover.
+- One-line invariant repeated everywhere; demo script has a timed narrative; interview
+  defense answers every likely question; LinkedIn draft ready with placeholders.
+- **Loss**: no recorded demo or published post yet (external actions) — the deliverable
+  that proves spoken communication is pending.
+
+---
 
 ## Overall
 
-**Ready for external submission, pending one external action:** produce the live Claude
-call (`R2`). Everything that is ours to control is done, verified and reproducible; the
-single non-PASS row in the matrix requires only credentials, not code.
+**Claimed total: 88/100.** Every claimed point is backed by code, tests, or recorded
+evidence in this repository. The four remaining losses are all external actions — public
+repo, demo video, LinkedIn post, final submission — plus the honest limitations of
+free-tier-only verification. The self-score is intentionally not higher: the free route's
+model variability, the unexercised Claude adapter, and the missing auth/multi-user
+isolation are real gaps, and the submission should not pretend otherwise.
