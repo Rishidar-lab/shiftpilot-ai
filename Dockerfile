@@ -58,11 +58,15 @@ COPY --from=builder --chown=node:node /deploy ./
 # The built browser app, served by this same process.
 COPY --from=builder --chown=node:node /build/apps/web/dist ./web
 
-# Default database location. A real deployment mounts a persistent volume over
-# this path; without one, the database lives in the container's writable layer
-# and is lost on every restart.
+# Default database location. Deliberately NOT declared as a VOLUME: on a free
+# tier there is no disk to mount, and declaring one would imply a persistence
+# the deployment does not have (it would also spawn anonymous volumes locally).
+#
+# Unmounted, /data is the container's writable layer — the database is created
+# from empty on every start and lost when the instance is replaced. That is the
+# intended Week-1 demo behaviour. Mounting a real disk at this same path makes
+# it durable with no change to the image or the application.
 RUN mkdir -p /data && chown node:node /data
-VOLUME ["/data"]
 
 USER node
 EXPOSE 8787

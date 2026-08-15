@@ -1,0 +1,47 @@
+# Render Blueprint — ShiftPilot Week-1 demonstration deployment.
+#
+# One free web service running the repository's Dockerfile: a single Node
+# process serving the built React app at / and the Fastify API at /api/*.
+#
+# Storage is deliberately EPHEMERAL. The free instance type has no disk, so the
+# SQLite database lives in the container's writable layer and starts empty
+# whenever the service is redeployed, restarted, or resumed after a spin-down.
+# That is an accepted Week-1 trade-off for a demonstration environment, not an
+# oversight — migrations run on every boot, so an empty database is a working
+# database. Attaching a disk at the same DATABASE_PATH makes it durable later
+# with no change to the image or the application.
+#
+# No secret value appears in this file. OPENROUTER_API_KEY is marked sync:false,
+# so Render prompts for it once and stores it in its own secret store.
+
+services:
+  - type: web
+    name: shiftpilot
+    runtime: docker # older Render schemas call this key `env`
+    plan: free
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      # PORT is injected by Render and must not be pinned here.
+      - key: DATABASE_PATH
+        value: /data/shiftpilot.db
+      - key: AI_PROVIDER
+        value: openrouter
+      # Free route only. assertFreeOpenRouterModel rejects anything else at
+      # boot and before every inference; there is no paid fallback.
+      - key: OPENROUTER_MODEL
+        value: openrouter/free
+      - key: OPENROUTER_BASE_URL
+        value: https://openrouter.ai/api/v1
+      # Entered in the Render dashboard, never committed. Use a NEW rotated key.
+      - key: OPENROUTER_API_KEY
+        sync: false
+    # CORS_ORIGIN is intentionally absent: the browser app and the API are the
+    # same origin, so no cross-origin request is ever made and no CORS policy is
+    # load-bearing. Set it only if the frontend is later served elsewhere.

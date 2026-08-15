@@ -92,32 +92,32 @@ the server starts. Both are idempotent, verified:
 
 There is no destructive path. A restart never resets data.
 
-## 4. Persistence — the honest trade-off
+## 4. Persistence — the decision, stated honestly
 
-SQLite is a deliberate Week-1 choice and is **not** being replaced for deployment
-convenience. What it requires is a real filesystem that survives restarts.
+SQLite is a deliberate Week-1 choice. It is **not** being replaced for deployment
+convenience, and no persistence code changes for any of the options below.
 
-**Preferred — persistent volume**
+**Week-1 decision: ephemeral, on Render Free.** The deployment link is supplementary to the
+submission, so it is not worth a paid disk or a database migration to keep demo data alive
+indefinitely. Consequences, which the README and this runbook both state rather than hide:
 
-Mount a volume and point the database at it:
+- runtime data resets when the free service **restarts, redeploys, or spins down** after
+  inactivity;
+- it is a **demonstration environment**, not a system of record;
+- an empty database is a working database — migrations run on every boot, verified by
+  destroying and recreating the container.
 
-```
-DATABASE_PATH=/data/shiftpilot.db
-```
+**Making it durable later** costs one setting, not an architecture change: attach a volume
+at `/data`, keep `DATABASE_PATH=/data/shiftpilot.db`, and the same image persists. The
+application already treats the path as configuration.
 
-Also required: **exactly one instance**. Two replicas would mean two SQLite writers and two
-in-process rate limiters against one volume. No autoscaling, no rolling second replica.
-
-**If the chosen tier has no persistent filesystem**, say so rather than implying otherwise.
-Two options, both legitimate:
-
-|            | Option A — ephemeral SQLite                                            | Option B — persistent storage                                           |
-| ---------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| What it is | Deploy as-is; the database lives in the container's writable layer     | Use a tier/host that offers a mounted volume                            |
-| Data       | **Resets on every redeploy, restart or machine move**                  | Survives restarts and redeploys                                         |
-| Cost       | Free                                                                   | Cents/month (Fly ≈ $0.15/GB-mo); no host offers a genuinely free volume |
-| Good for   | A demo where the shift is created live on camera                       | The Week-1 demo URL staying alive between sessions                      |
-| Must do    | State the reset behaviour in the demo/README — never imply persistence | Mount at `/data`, one instance                                          |
+|               | Ephemeral (Week-1 choice)                | Persistent (later, optional)                            |
+| ------------- | ---------------------------------------- | ------------------------------------------------------- |
+| Storage       | Container's writable layer at `/data`    | Volume mounted at `/data`                               |
+| Data          | Resets on restart / redeploy / spin-down | Survives restarts and redeploys                         |
+| Cost          | **Free**                                 | Cents per month; no host offers a genuinely free volume |
+| Config change | none                                     | mount a disk; same `DATABASE_PATH`                      |
+| Instances     | 1                                        | 1 (two SQLite writers on one file is not safe)          |
 
 Never point `DATABASE_PATH` inside `dist/` or any build output.
 
@@ -188,20 +188,59 @@ traces. Verified in the container:
 
 A half-configured provider never degrades silently to the offline one.
 
-## 8. Deploying to a host
+## 8. Deploying to a host — Render Free (the Week-1 target)
 
-Any platform that builds a Dockerfile and can attach a volume works. Requirements are the
-same everywhere: build from `Dockerfile`, mount a volume at `/data`, set `CORS_ORIGIN` and
-`AI_PROVIDER`, add `OPENROUTER_API_KEY` as a **secret**, health check `/api/health`, **one
-instance**.
+The Week-1 deployment target is a **Render Free Web Service** running this repository's
+Dockerfile, with **ephemeral SQLite**. It is genuinely zero-cost, needs no disk, and needs
+no change to the persistence layer.
 
-- **Fly.io** — `fly launch --no-deploy` (detects the Dockerfile),
-  `fly volumes create shiftpilot_data --size 1`, mount at `/data` in `fly.toml`, set
-  `min_machines_running = 1`, `fly secrets set OPENROUTER_API_KEY=…`, `fly deploy`.
-- **Render** — Web Service, runtime Docker, Disk mounted at `/data`, env vars in the
-  dashboard, health check path `/api/health`, instances 1. (Disks are a paid feature; the
-  free tier also sleeps — that is Option A territory.)
-- **Railway** — deploy from the repo, add a volume at `/data`, set variables, one replica.
+What "ephemeral" means here, stated plainly:
+
+- the database starts **empty** on every deploy, restart, and resume after a spin-down;
+- free instances spin down after inactivity, so a demo left overnight comes back blank;
+- **nothing is lost that matters** — Week 1 stores no irreplaceable data, and migrations run
+  on every boot, so an empty database is a working database (verified by destroying and
+  recreating the container);
+- this is a **demonstration environment**, and the README says so.
+
+The repository already supports a persistent `DATABASE_PATH`. Attaching a Render Disk (or
+any volume) at `/data` later makes storage durable with **no change to the image, the
+domain, or the persistence layer** — only the instance type changes.
+
+### Blueprint (`render.yaml`)
+
+The repository ships a Blueprint describing exactly this free service. It contains no secret
+value: `OPENROUTER_API_KEY` is marked `sync: false`, so Render prompts for it and keeps it in
+its own store. Use **New → Blueprint** and point it at the repository, or follow the
+dashboard steps below — both produce the same service.
+
+### Dashboard steps
+
+1. **New → Web Service**, connect GitHub, select `Rishidar-lab/shiftpilot-ai`.
+2. Language/Runtime: **Docker**. Branch `main`. Dockerfile path `./Dockerfile`, context `.`.
+3. Instance type: **Free**.
+4. Health check path: `/api/health`.
+5. Environment variables — see §5. Set `AI_PROVIDER=openrouter`,
+   `OPENROUTER_MODEL=openrouter/free`, `OPENROUTER_BASE_URL=https://openrouter.ai/api/v1`,
+   `NODE_ENV=production`, `HOST=0.0.0.0`, `DATABASE_PATH=/data/shiftpilot.db`. Add
+   `OPENROUTER_API_KEY` as a **secret** — a NEW rotated key.
+6. **Do not set `PORT`.** Render injects it; the app reads it. Pinning it breaks routing.
+7. Deploy, then run §9 and `docs/post-deploy-checklist.md` against the `onrender.com` URL.
+
+`CORS_ORIGIN` is not needed: the app and API share an origin, so no cross-origin request is
+ever made. Set it only if the frontend is later served from somewhere else.
+
+Verified locally against the exact production image, with Render's shape simulated
+(`PORT=10000` injected, no volume mounted): binds `0.0.0.0:10000`, migrations applied from
+empty, `/` `/api/health` SPA-fallback and JSON-404 all correct, full workflow passes, and
+after destroying and recreating the container the database is empty and the app still works
+end to end.
+
+### Other hosts
+
+Any platform that builds a Dockerfile works the same way. For durable storage: mount a
+volume at `/data`, keep `DATABASE_PATH=/data/shiftpilot.db`, health check `/api/health`, and
+run **exactly one instance** — two replicas would mean two SQLite writers against one file.
 
 ## 9. First production smoke test
 
@@ -221,30 +260,37 @@ Then run the full 18-step browser pass in **`docs/post-deploy-checklist.md`**.
 
 ## 10. Restart verification
 
-Persistence is not proven until a restart proves it:
+What a restart proves depends on which storage you deployed with — and either result can be
+correct, so decide which you expect **before** you test.
 
-1. create a shift and approve at least one task;
-2. restart the service (`fly apps restart`, Render "Manual Deploy → Restart", or
-   `docker restart shiftpilot`);
-3. reload the page — the shift and its tasks must still be there.
+**On Render Free (ephemeral, the Week-1 target):**
 
-If they vanish, the volume is not mounted where `DATABASE_PATH` points. This exact sequence
-was verified locally against the container.
+1. create a shift and approve a task;
+2. restart the service (Render dashboard → **Manual Deploy → Restart**, or just redeploy);
+3. reload — the shift is **gone**, and the app works normally from empty.
+
+That is the documented behaviour, not a failure. A blank app that still creates shifts is a
+pass; an error page or a failed migration is a fail.
+
+**On a volume-backed deployment:** the same three steps must leave the shift and its tasks
+**intact**. If they vanish, the volume is not mounted where `DATABASE_PATH` points.
+
+Both behaviours were verified locally against the production image: with a volume, one shift
+and nine tasks survived a restart; without one, the database came back empty and the full
+workflow still passed.
 
 ## 11. Rollback and recovery
 
 **Bad deploy.** Every commit on `main` is a deployable image. Roll back by redeploying the
 previous commit:
 
-```sh
-git log --oneline -5                 # pick the last good commit
-fly deploy --image-label <previous>  # or the platform's "rollback to previous deploy"
-```
+On Render: **Deploys → the last good deploy → Redeploy**. Every commit on `main` builds a
+complete image, so any previous commit is a deployable rollback target.
 
 Rolling back **code** is always safe. Rolling back **across a migration** is not: migrations
 are forward-only (no down scripts), so a rollback to a commit older than the last applied
-migration may meet a database schema it does not expect. Week 1 has five migrations and no
-production data yet, so in practice: restore the database file alongside the code.
+migration could meet a schema it does not expect. On the ephemeral Week-1 deployment this
+cannot bite — the database is recreated from the rolled-back code's own migrations.
 
 **Database backup / restore.** The database is one file. With the service stopped:
 
@@ -253,9 +299,10 @@ docker cp shiftpilot:/data/shiftpilot.db ./backup-$(date +%F).db     # backup
 docker cp ./backup-2026-08-15.db shiftpilot:/data/shiftpilot.db      # restore
 ```
 
-On a volume-backed host, use the platform's snapshot feature (`fly volumes snapshots list`)
-or `fly ssh console` + `sqlite3 /data/shiftpilot.db .dump`. WAL mode means `-wal` and `-shm`
-files may sit beside it; copy the set, or stop the service first so WAL is checkpointed.
+On Render Free there is nothing to back up — storage is ephemeral by design. On a
+volume-backed host, use the platform's snapshot feature or a shell plus
+`sqlite3 /data/shiftpilot.db .dump`. WAL mode means `-wal` and `-shm` files may sit beside
+the database; copy the set, or stop the service first so the WAL is checkpointed.
 
 **Total loss.** There is no state that cannot be rebuilt by recreating a shift — Week 1
 stores no irreplaceable data. Recreate the service, mount a fresh volume, deploy.

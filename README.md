@@ -231,6 +231,25 @@ Then open `http://localhost:8080`. Migrations run from a compiled runner before 
 starts, and the database lives on the mounted volume. `docs/deployment.md` has the
 environment contract, the failure behaviour, and platform-specific steps.
 
+### Deployment and data persistence
+
+The deployed demo runs as a **Render Free web service** from this repository's Dockerfile:
+one Node process, the React app at `/`, the API at `/api/*`, and the OpenRouter free route
+for AI. `render.yaml` describes it, and it holds no secret — the API key is entered in
+Render's own secret store.
+
+**Storage there is ephemeral, deliberately.** The free instance type has no disk, so the
+SQLite database lives in the container's writable layer and **starts empty whenever the
+service restarts, redeploys, or resumes after spinning down**. The deployed link is a
+**demonstration environment**, not a system of record. This is a Week-1 trade-off taken on
+purpose: keeping demo data alive indefinitely is not worth a paid disk or a database
+migration for a supplementary link.
+
+Nothing about that is a limitation of the application. `DATABASE_PATH` is configuration, and
+migrations run on every boot — so an empty database is a working database. Attaching a
+volume at `/data` on any host makes storage durable **without changing the image, the domain
+layer, or the persistence code**; only the instance type changes.
+
 ### Environment setup
 
 Configuration is read from the process environment by the API at boot, validated by zod
@@ -255,12 +274,12 @@ block (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`,
 `OPENROUTER_MAX_OUTPUT_TOKENS`, `OPENROUTER_MAX_RETRIES`) and the optional Claude block.
 
 **Production deployments must not use a `.env` file.** Inject the variables through the
-hosting platform's own environment/secrets mechanism (Render environment groups, Fly
-secrets, Railway variables, ECS task secrets, Kubernetes Secrets, …) so the credential
-exists only in the platform's secret store and only in the backend service's process. Do
-not put real secrets into GitHub — not in the repository, and not in the repository
-description. `docs/deployment.md` lists the production-required variables and the topology
-that keeps the key server-side.
+hosting platform's own environment/secrets mechanism (Render environment variables, Railway
+variables, Kubernetes Secrets, …) so the credential exists only in the platform's secret
+store and only in the backend service's process. Do not put real secrets into GitHub — not
+in the repository, and not in the repository description. `docs/deployment.md` is the
+runbook: production variables, the topology that keeps the key server-side, and the Render
+Free deployment this project targets.
 
 ### Migrations
 
@@ -307,6 +326,8 @@ Vitest
   Week-1 scope.
 - **Not production-ready.** Single-process SQLite, in-process rate limiting, no clustered
   deployment, no audit UI. Week-1 scope.
+- **The deployed demo does not keep data.** Render Free has no disk, so the database resets
+  on restart, redeploy or spin-down. Deliberate — see "Deployment and data persistence".
 - **Free-tier best effort.** `openrouter/free` serves models of varying quality and shared
   quotas; a capable `:free` model is recommended for reproducible runs. This is a spend
   brake, not a monetary guarantee — configure limits at the provider console too.
