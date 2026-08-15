@@ -166,7 +166,7 @@ describe("FakeAiProvider", () => {
         headline: "Handover for 2026-08-12",
         summary:
           "The list did not fully clear, and some items are past their deadline. " +
-          "The planner raised dependency_cycle.",
+          "The planner flagged that some tasks depend on each other in a loop.",
         attention: [
           { taskId: "p1", why: "Past its deadline." },
           { taskId: "b1", why: "Waiting on Parts delivery." },
@@ -202,6 +202,36 @@ describe("FakeAiProvider", () => {
       expect(attempt.ok).toBe(true)
       if (!attempt.ok) return
       expect((attempt.raw as { attention: unknown[] }).attention).toHaveLength(5)
+    })
+
+    it("writes warnings as prose, never as planner identifiers", async () => {
+      const flagged: HandoverFacts = {
+        ...FACTS,
+        warnings: [
+          { type: "missing_duration", taskIds: ["p1"] },
+          { type: "cannot_fit", taskIds: ["p1"] },
+        ],
+      }
+      const attempt = await provider.generateHandover(flagged)
+      expect(attempt.ok).toBe(true)
+      if (!attempt.ok) return
+
+      const { summary } = attempt.raw as { summary: string }
+      expect(summary).toContain(
+        "The planner flagged that some tasks have no estimate, so a default was assumed " +
+          "and some tasks do not fit before the shift ends.",
+      )
+      // The whole point: this text goes to the next person on shift.
+      expect(summary).not.toMatch(/_/)
+    })
+
+    it("says so plainly when there is nothing else to flag", async () => {
+      const attempt = await provider.generateHandover({ ...FACTS, warnings: [] })
+      expect(attempt.ok).toBe(true)
+      if (!attempt.ok) return
+      expect((attempt.raw as { summary: string }).summary).toContain(
+        "The planner flagged nothing else.",
+      )
     })
 
     it("can be forced to fail so degraded handover has an offline twin", async () => {

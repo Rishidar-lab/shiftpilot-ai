@@ -1,4 +1,4 @@
-import type { HandoverFacts, ShiftContext } from "@shiftpilot/contracts"
+import type { HandoverFacts, PlanWarning, ShiftContext } from "@shiftpilot/contracts"
 import type {
   AiProvider,
   AiProviderMeta,
@@ -87,16 +87,38 @@ export class FakeAiProvider implements AiProvider {
       ok: true,
       raw: {
         headline: `Handover for ${facts.date}`,
-        summary: [
-          shape,
-          facts.warnings.length > 0
-            ? `The planner raised ${facts.warnings.map((w) => w.type).join(", ")}.`
-            : "The planner raised no warnings.",
-        ].join(" "),
+        summary: [shape, warningSentence(facts.warnings)].join(" "),
         attention,
       },
     }
   }
+}
+
+/**
+ * Plan warnings as something a worker reads, not as the identifiers the planner
+ * uses internally: this text lands in a handover the next person on shift reads,
+ * and "missing_duration, cannot_fit" tells them nothing.
+ *
+ * A Record rather than a switch so the compiler fails when a new PlanWarning
+ * type is added and its wording is not — a missing case would otherwise fall
+ * back to leaking the raw code again.
+ */
+const WARNING_CLAUSE: Record<PlanWarning["type"], string> = {
+  cannot_fit: "some tasks do not fit before the shift ends",
+  missing_duration: "some tasks have no estimate, so a default was assumed",
+  dependency_cycle: "some tasks depend on each other in a loop",
+  shift_ended: "the shift has already ended",
+  empty_workload: "no tasks were captured",
+  draft_not_approved: "some extracted tasks are still waiting for approval",
+}
+
+function warningSentence(warnings: readonly PlanWarning[]): string {
+  if (warnings.length === 0) return "The planner flagged nothing else."
+
+  const clauses = warnings.map((warning) => WARNING_CLAUSE[warning.type])
+  const last = clauses[clauses.length - 1]!
+  const joined = clauses.length === 1 ? last : `${clauses.slice(0, -1).join(", ")} and ${last}`
+  return `The planner flagged that ${joined}.`
 }
 
 // ---------------------------------------------------------------------------
