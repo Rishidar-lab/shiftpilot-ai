@@ -219,17 +219,34 @@ The web app is at `http://localhost:5173`. In fake mode everything works with no
 
 ### Environment setup
 
-Copy the template and override only what you need:
+Configuration is read from the process environment by the API at boot, validated by zod
+(`apps/api/src/config.ts`), and applied once. Where the values come from differs by context,
+and only one of those places is a file:
+
+| Context        | Where values live                                    | In Git?                   |
+| -------------- | ---------------------------------------------------- | ------------------------- |
+| **Local dev**  | an ignored `apps/api/.env`, **or** shell variables   | never — `.env` is ignored |
+| **Repository** | `.env.example` only — placeholders, no values        | yes, and only this        |
+| **Production** | the hosting platform's environment / secrets manager | never                     |
+
+For **local development only**, copy the template and fill in what you need:
 
 ```sh
-cp .env.example apps/api/.env
+cp .env.example apps/api/.env      # LOCAL ONLY — this file is gitignored, never commit it
 ```
 
-`.env.example` documents every variable: server port/host, database path,
-`AI_PROVIDER`, cost/safety controls, and the OpenRouter activation block
-(`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`,
-`OPENROUTER_MAX_OUTPUT_TOKENS`, `OPENROUTER_MAX_RETRIES`) plus the optional Claude
-block. **Never commit a real `.env`.**
+`.env.example` documents every variable the config schema accepts: server port/host, CORS
+origin, database path, `AI_PROVIDER`, the cost/safety controls, the OpenRouter activation
+block (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`,
+`OPENROUTER_MAX_OUTPUT_TOKENS`, `OPENROUTER_MAX_RETRIES`) and the optional Claude block.
+
+**Production deployments must not use a `.env` file.** Inject the variables through the
+hosting platform's own environment/secrets mechanism (Render environment groups, Fly
+secrets, Railway variables, ECS task secrets, Kubernetes Secrets, …) so the credential
+exists only in the platform's secret store and only in the backend service's process. Do
+not put real secrets into GitHub — not in the repository, and not in the repository
+description. `docs/deployment.md` lists the production-required variables and the topology
+that keeps the key server-side.
 
 ### Migrations
 
@@ -291,8 +308,13 @@ Vitest
 `docs/implementation-plan.md` (milestones + audit record) · `docs/demo-script.md` +
 `docs/demo-seed-data.md` (reproducible demo) · `docs/interview-defense.md` (rationale +
 hard questions) · `docs/rubric-self-review.md` (conservative self-assessment) ·
-`docs/week1-submission-matrix.md` (requirement → evidence) · `CLAUDE.md` (engineering
-rules, security requirements).
+`docs/week1-submission-matrix.md` (requirement → evidence) · `docs/deployment.md`
+(topology, production variables, persistence) · `docs/github-release-checklist.md`
+(publication steps) · `CLAUDE.md` (engineering rules, security requirements).
+
+## License
+
+MIT — see `LICENSE`.
 
 ## Screenshots
 
