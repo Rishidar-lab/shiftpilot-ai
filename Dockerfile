@@ -38,7 +38,11 @@ RUN pnpm build
 # directories instead of workspace symlinks. Dev tooling (vite, vitest, tsup,
 # eslint, tsx) is not part of it.
 RUN pnpm --filter @shiftpilot/api deploy --prod --legacy /deploy \
-  && rm -rf /deploy/src /deploy/tsconfig.json /deploy/tsup.config.ts /deploy/drizzle.config.ts
+  && rm -rf /deploy/src /deploy/tsconfig.json /deploy/tsup.config.ts /deploy/drizzle.config.ts \
+  # Workspace package sources come along for the ride but are never loaded — tsup
+  # bundles @shiftpilot/* into dist. Test files in particular have no business in
+  # a production image, and their placeholder API keys trip image secret scans.
+  && find /deploy -name "*.test.ts" -delete
 
 # --- Stage 2: runtime -------------------------------------------------------
 FROM node:22-slim AS runtime

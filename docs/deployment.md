@@ -51,7 +51,7 @@ docker run -d --name shiftpilot \
 ```
 
 The image presets `NODE_ENV`, `HOST=0.0.0.0`, `PORT=8787`, `WEB_ROOT=/app/web`,
-`DATABASE_PATH=/data/shiftpilot.db`, declares `VOLUME ["/data"]`, runs as the unprivileged
+`DATABASE_PATH=/data/shiftpilot.db` (override it per deployment), runs as the unprivileged
 `node` user (uid 1000), and its CMD is `node dist/db/migrate.js && exec node dist/index.js`.
 
 ### Bare Node (platforms that build from source)
@@ -196,6 +196,8 @@ no change to the persistence layer.
 
 What "ephemeral" means here, stated plainly:
 
+- `DATABASE_PATH=/tmp/shiftpilot.db` — `/tmp`, not `/data`, because nothing is mounted on
+  the free tier and a path named `/data` would read as a volume that does not exist;
 - the database starts **empty** on every deploy, restart, and resume after a spin-down;
 - free instances spin down after inactivity, so a demo left overnight comes back blank;
 - **nothing is lost that matters** — Week 1 stores no irreplaceable data, and migrations run
@@ -222,7 +224,7 @@ dashboard steps below — both produce the same service.
 4. Health check path: `/api/health`.
 5. Environment variables — see §5. Set `AI_PROVIDER=openrouter`,
    `OPENROUTER_MODEL=openrouter/free`, `OPENROUTER_BASE_URL=https://openrouter.ai/api/v1`,
-   `NODE_ENV=production`, `HOST=0.0.0.0`, `DATABASE_PATH=/data/shiftpilot.db`. Add
+   `NODE_ENV=production`, `HOST=0.0.0.0`, `DATABASE_PATH=/tmp/shiftpilot.db`. Add
    `OPENROUTER_API_KEY` as a **secret** — a NEW rotated key.
 6. **Do not set `PORT`.** Render injects it; the app reads it. Pinning it breaks routing.
 7. Deploy, then run §9 and `docs/post-deploy-checklist.md` against the `onrender.com` URL.

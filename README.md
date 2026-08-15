@@ -239,8 +239,8 @@ for AI. `render.yaml` describes it, and it holds no secret — the API key is en
 Render's own secret store.
 
 **Storage there is ephemeral, deliberately.** The free instance type has no disk, so the
-SQLite database lives in the container's writable layer and **starts empty whenever the
-service restarts, redeploys, or resumes after spinning down**. The deployed link is a
+database is written to `/tmp` inside the container and **starts empty whenever the service
+restarts, redeploys, or resumes after spinning down**. The deployed link is a
 **demonstration environment**, not a system of record. This is a Week-1 trade-off taken on
 purpose: keeping demo data alive indefinitely is not worth a paid disk or a database
 migration for a supplementary link.

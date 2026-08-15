@@ -29,8 +29,14 @@ services:
       - key: HOST
         value: 0.0.0.0
       # PORT is injected by Render and must not be pinned here.
+      #
+      # /tmp, not /data: on the free instance type nothing is mounted, so a
+      # path named /data would read as a persistent volume that does not exist.
+      # /tmp says what this is — scratch space that starts empty after any
+      # lifecycle event. A durable deployment sets DATABASE_PATH=/data and
+      # mounts a disk there; the image and the application are unchanged.
       - key: DATABASE_PATH
-        value: /data/shiftpilot.db
+        value: /tmp/shiftpilot.db
       - key: AI_PROVIDER
         value: openrouter
       # Free route only. assertFreeOpenRouterModel rejects anything else at
