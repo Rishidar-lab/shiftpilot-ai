@@ -41,6 +41,13 @@ export const envSchema = z.object({
     z.coerce.number().int().positive().optional(),
   ),
   DATABASE_PATH: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  /**
+   * Directory holding the built web app (`apps/web/dist`). When set, this
+   * process serves the browser app and the API from ONE origin, which is what
+   * the web client's relative "/api" base requires in production. Unset in
+   * development, where Vite serves the app and proxies /api here.
+   */
+  WEB_ROOT: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
 
   // --- Claude provider (only consulted when AI_PROVIDER=claude) ---
   /** Server-side only. Never sent to the browser, never logged, never committed. */
@@ -123,6 +130,8 @@ export interface AppConfig {
   aiRateLimit: number
   aiRateLimitWindowMs: number
   databasePath: string
+  /** Built web app directory to serve from this process, or null for API-only. */
+  webRoot: string | null
   anthropic: AnthropicConfig | null
   openrouter: OpenRouterConfig | null
 }
@@ -138,6 +147,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   aiRateLimit: 10,
   aiRateLimitWindowMs: 60_000,
   databasePath: "data/shiftpilot.db",
+  webRoot: null,
   anthropic: null,
   openrouter: null,
 }
@@ -154,6 +164,7 @@ function applyDefaults(env: ParsedEnv): AppConfig {
     aiRateLimit: env.AI_RATE_LIMIT ?? DEFAULT_CONFIG.aiRateLimit,
     aiRateLimitWindowMs: env.AI_RATE_LIMIT_WINDOW_MS ?? DEFAULT_CONFIG.aiRateLimitWindowMs,
     databasePath: env.DATABASE_PATH ?? DEFAULT_CONFIG.databasePath,
+    webRoot: env.WEB_ROOT ?? DEFAULT_CONFIG.webRoot,
     anthropic: null,
     openrouter: null,
   }

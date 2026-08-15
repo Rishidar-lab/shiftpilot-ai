@@ -1,6 +1,9 @@
 import cors from "@fastify/cors"
+import fastifyStatic from "@fastify/static"
 import Fastify from "fastify"
 import type { FastifyInstance } from "fastify"
+import { existsSync } from "node:fs"
+import { join, resolve } from "node:path"
 import { ZodError } from "zod"
 
 import type { AppConfig } from "./config.js"
@@ -58,7 +61,34 @@ export function buildApp({ config, db, provider }: AppDeps): FastifyInstance {
   // Bare /health for infrastructure probes; not part of the API surface.
   registerHealth(app, provider)
 
-  app.setNotFoundHandler((_request, reply) => {
+  // Single-service production mode: this process also serves the built browser
+  // app, so the client's relative "/api" base resolves on its own origin and no
+  // second long-lived process or reverse proxy is needed. Unset in development,
+  // where Vite serves the app and proxies /api here.
+  const webRoot = config.webRoot === null ? null : resolve(config.webRoot)
+  if (webRoot !== null) {
+    // Fail at boot rather than serving 404s for every page: a WEB_ROOT pointing
+    // at nothing is a deployment mistake, and it should look like one.
+    if (!existsSync(join(webRoot, "index.html"))) {
+      throw new Error(
+        `WEB_ROOT is set to "${webRoot}" but that directory has no index.html. ` +
+          "Point it at the built web app (apps/web/dist, produced by `pnpm build`), " +
+          "or unset WEB_ROOT to run the API without serving the browser app.",
+      )
+    }
+    void app.register(fastifyStatic, { root: webRoot, wildcard: false })
+  }
+
+  app.setNotFoundHandler((request, reply) => {
+    // SPA fallback: client-side routes must resolve to the app shell. Only ever
+    // for GET/HEAD, and never for /api — an unknown API route is a JSON 404, not
+    // a page, or a mistyped endpoint would return HTML with a 200.
+    const isApi = request.url === "/api" || request.url.startsWith("/api/")
+    const isPageRequest = request.method === "GET" || request.method === "HEAD"
+    if (webRoot !== null && isPageRequest && !isApi) {
+      void reply.type("text/html").sendFile("index.html")
+      return
+    }
     reply.status(404).send({ error: { code: "not_found", message: "route not found" } })
   })
 
