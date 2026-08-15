@@ -323,8 +323,10 @@ Vitest
 `docs/demo-seed-data.md` (reproducible demo) · `docs/interview-defense.md` (rationale +
 hard questions) · `docs/rubric-self-review.md` (conservative self-assessment) ·
 `docs/week1-submission-matrix.md` (requirement → evidence) · `docs/deployment.md`
-(topology, production variables, persistence) · `docs/github-release-checklist.md`
-(publication steps) · `CLAUDE.md` (engineering rules, security requirements).
+(runbook: topology, production sequence, persistence trade-off, rollback) ·
+`docs/post-deploy-checklist.md` (18-step verification after deploy) ·
+`docs/github-release-checklist.md` (publication steps) · `CLAUDE.md` (engineering rules,
+security requirements).
 
 ## License
 
