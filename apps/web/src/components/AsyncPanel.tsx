@@ -22,7 +22,7 @@ export function AsyncPanel<T>({
 }) {
   if (state.status === "loading") {
     return (
-      <p className="loading" role="status" aria-busy="true">
+      <p className="meta" role="status" aria-busy="true" style={{ marginTop: 8 }}>
         Loading {label}…
       </p>
     )
@@ -30,10 +30,10 @@ export function AsyncPanel<T>({
 
   if (state.status === "error") {
     return (
-      <div className="banner error" role="alert">
+      <div className="banner banner-error" role="alert">
         <strong>Could not load the {label}.</strong> {state.message}
         <div className="row">
-          <button type="button" onClick={onRetry}>
+          <button type="button" className="btn btn-sm" onClick={onRetry}>
             Try again
           </button>
         </div>

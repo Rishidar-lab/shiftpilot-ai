@@ -66,29 +66,59 @@ function stubClient(overrides: Partial<ApiClient> = {}): ApiClient {
   })
 }
 
+const COMPOSER_LABEL = "What needs to happen this shift?"
+
 describe("IntakeView", () => {
   it("labels the capture control for assistive technology", () => {
     render(<IntakeView client={stubClient()} shiftId="shift-1" onApproved={() => {}} />)
-    expect(screen.getByLabelText("Your workload, in your own words")).toBeDefined()
+    expect(screen.getByLabelText(COMPOSER_LABEL)).toBeDefined()
   })
 
   it("disables extraction until there is text", async () => {
     render(<IntakeView client={stubClient()} shiftId="shift-1" onApproved={() => {}} />)
-    const button = screen.getByRole("button", { name: "Extract tasks" })
+    const button = screen.getByRole("button", { name: "Build my shift" })
     expect(button.hasAttribute("disabled")).toBe(true)
 
-    await userEvent.type(screen.getByLabelText("Your workload, in your own words"), "Restock")
+    await userEvent.type(screen.getByLabelText(COMPOSER_LABEL), "Restock")
     expect(button.hasAttribute("disabled")).toBe(false)
+  })
+
+  it("fills the composer from the demo workload without calling the backend", async () => {
+    const createIntake = vi.fn().mockResolvedValue(intake([draft()]))
+    render(
+      <IntakeView client={stubClient({ createIntake })} shiftId="shift-1" onApproved={() => {}} />,
+    )
+
+    await userEvent.click(screen.getByRole("button", { name: "Try demo workload" }))
+
+    const composer = screen.getByLabelText(COMPOSER_LABEL) as HTMLTextAreaElement
+    expect(composer.value).toContain("Restock aisle 3 by 11am")
+    expect(composer.value).toContain("Full inventory recount at end of day")
+    expect(createIntake).not.toHaveBeenCalled()
+  })
+
+  it("submits with Ctrl+Enter on the composer", async () => {
+    const createIntake = vi
+      .fn()
+      .mockResolvedValueOnce(intake([draft()]))
+      .mockResolvedValue(intake([draft()]))
+    render(
+      <IntakeView client={stubClient({ createIntake })} shiftId="shift-1" onApproved={() => {}} />,
+    )
+
+    await userEvent.type(screen.getByLabelText(COMPOSER_LABEL), "Restock")
+    await userEvent.keyboard("{Control>}{Enter}{/Control}")
+    await waitFor(() => expect(createIntake).toHaveBeenCalledTimes(1))
   })
 
   it("shows the extracted drafts with editable, labelled fields", async () => {
     render(<IntakeView client={stubClient()} shiftId="shift-1" onApproved={() => {}} />)
-    await userEvent.type(screen.getByLabelText("Your workload, in your own words"), "Restock")
-    await userEvent.click(screen.getByRole("button", { name: "Extract tasks" }))
+    await userEvent.type(screen.getByLabelText(COMPOSER_LABEL), "Restock")
+    await userEvent.click(screen.getByRole("button", { name: "Build my shift" }))
 
     expect(await screen.findByLabelText("Task title")).toBeDefined()
     expect(screen.getByLabelText("Duration (min)")).toBeDefined()
-    expect(screen.getByRole("button", { name: "Approve 1 task(s)" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Approve 1 task" })).toBeDefined()
   })
 
   it("surfaces an extraction failure with a retry and reassurance the text was kept", async () => {
@@ -99,15 +129,27 @@ describe("IntakeView", () => {
     render(
       <IntakeView client={stubClient({ createIntake })} shiftId="shift-1" onApproved={() => {}} />,
     )
-    await userEvent.type(screen.getByLabelText("Your workload, in your own words"), "Restock")
-    await userEvent.click(screen.getByRole("button", { name: "Extract tasks" }))
+    await userEvent.type(screen.getByLabelText(COMPOSER_LABEL), "Restock")
+    await userEvent.click(screen.getByRole("button", { name: "Build my shift" }))
 
     const alert = await screen.findByRole("alert")
-    expect(alert.textContent).toContain("provider down")
+    expect(alert.textContent).toContain("Free AI capacity is temporarily unavailable")
     expect(alert.textContent).toContain("Your text was saved")
 
     await userEvent.click(screen.getByRole("button", { name: "Try again" }))
     await waitFor(() => expect(createIntake).toHaveBeenCalledTimes(2))
+  })
+
+  it("phrases rate limits as capacity noise, never as a lost input", async () => {
+    const createIntake = vi.fn().mockRejectedValue(new ApiError("rate_limited", "429"))
+    render(
+      <IntakeView client={stubClient({ createIntake })} shiftId="shift-1" onApproved={() => {}} />,
+    )
+    await userEvent.type(screen.getByLabelText(COMPOSER_LABEL), "Restock")
+    await userEvent.click(screen.getByRole("button", { name: "Build my shift" }))
+
+    const alert = await screen.findByRole("alert")
+    expect(alert.textContent).toContain("AI capacity is busy right now. Nothing was lost.")
   })
 
   // Regression — audit A-4 (client half): a draft the pipeline rejected must
@@ -138,11 +180,11 @@ describe("IntakeView", () => {
         onApproved={() => {}}
       />,
     )
-    await userEvent.type(screen.getByLabelText("Your workload, in your own words"), "x")
-    await userEvent.click(screen.getByRole("button", { name: "Extract tasks" }))
+    await userEvent.type(screen.getByLabelText(COMPOSER_LABEL), "x")
+    await userEvent.click(screen.getByRole("button", { name: "Build my shift" }))
 
     expect(await screen.findByText(/deadline_before_shift/)).toBeDefined()
-    await userEvent.click(screen.getByRole("button", { name: "Approve 1 task(s)" }))
+    await userEvent.click(screen.getByRole("button", { name: "Approve 1 task" }))
 
     await waitFor(() => expect(approveIntake).toHaveBeenCalled())
     const decisions = approveIntake.mock.calls[0]![1] as Array<{ draftId: string }>
@@ -156,10 +198,10 @@ describe("IntakeView", () => {
     render(
       <IntakeView client={stubClient({ createIntake })} shiftId="shift-1" onApproved={() => {}} />,
     )
-    await userEvent.type(screen.getByLabelText("Your workload, in your own words"), "x")
-    await userEvent.click(screen.getByRole("button", { name: "Extract tasks" }))
+    await userEvent.type(screen.getByLabelText(COMPOSER_LABEL), "x")
+    await userEvent.click(screen.getByRole("button", { name: "Build my shift" }))
 
-    expect(await screen.findByText(/next leap day/)).toBeDefined()
+    expect((await screen.findAllByText(/next leap day/)).length).toBeGreaterThan(0)
     expect(screen.getByText(/please set it yourself/)).toBeDefined()
   })
 
@@ -168,8 +210,8 @@ describe("IntakeView", () => {
     render(
       <IntakeView client={stubClient({ createIntake })} shiftId="shift-1" onApproved={() => {}} />,
     )
-    await userEvent.type(screen.getByLabelText("Your workload, in your own words"), "???")
-    await userEvent.click(screen.getByRole("button", { name: "Extract tasks" }))
+    await userEvent.type(screen.getByLabelText(COMPOSER_LABEL), "???")
+    await userEvent.click(screen.getByRole("button", { name: "Build my shift" }))
 
     expect(await screen.findByText(/No tasks could be read/)).toBeDefined()
   })

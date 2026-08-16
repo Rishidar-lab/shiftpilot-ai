@@ -9,13 +9,15 @@ import type { HealthResponse } from "@shiftpilot/contracts"
 export function FakeProviderBadge({ health }: { health: HealthResponse }) {
   if (health.providerIsFake) {
     return (
-      <span className="badge fake" title={health.providerLabel}>
+      <span className="provider-badge fake" title={health.providerLabel}>
+        <span className="dot" aria-hidden="true" />
         Simulated AI · no real LLM
       </span>
     )
   }
   return (
-    <span className="badge real" title={health.providerLabel}>
+    <span className="provider-badge real" title={health.providerLabel}>
+      <span className="dot" aria-hidden="true" />
       Live AI · {health.model ?? health.provider}
     </span>
   )

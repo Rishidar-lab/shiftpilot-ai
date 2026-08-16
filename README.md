@@ -235,8 +235,9 @@ environment contract, the failure behaviour, and platform-specific steps.
 
 The deployed demo runs as a **Render Free web service** from this repository's Dockerfile:
 one Node process, the React app at `/`, the API at `/api/*`, and the OpenRouter free route
-for AI. `render.yaml` describes it, and it holds no secret — the API key is entered in
-Render's own secret store.
+for AI. It's live at **https://shiftpilot-rkmx.onrender.com** (the free instance cold-starts
+after inactivity — the first load can take tens of seconds). `render.yaml` describes it, and
+it holds no secret — the API key is entered in Render's own secret store.
 
 **Storage there is ephemeral, deliberately.** The free instance type has no disk, so the
 database is written to `/tmp` inside the container and **starts empty whenever the service
@@ -300,12 +301,13 @@ pnpm format           # prettier --check .
 pnpm build            # api bundle (tsup) + web bundle (vite)
 ```
 
-**283 tests** cover the domain engines (deadlines/timezones, dependency cycles, duplicate
+**303 tests** cover the domain engines (deadlines/timezones, dependency cycles, duplicate
 approval, What Next, handover fallback), the provider boundary (free-model guard, failure
 mapping, degraded paths), the API (rate limiting, intake, review, approval), and the web
-UI (loading/error/retry states). CI runs install → lint → typecheck → format → test →
-build plus a fresh-database migration smoke test. **CI needs no secrets and makes no paid
-API calls.** Recorded OpenRouter fixtures are validated by the offline suite.
+UI (loading/error/retry states, landing routing, demo composer). CI runs install → lint →
+typecheck → format → test → build plus a fresh-database migration smoke test. **CI needs no
+secrets and makes no paid API calls.** Recorded OpenRouter fixtures are validated by the
+offline suite.
 
 ## Demo
 
@@ -355,24 +357,48 @@ MIT — see `LICENSE`.
 
 ## Screenshots
 
-Captured from the production build running in its container, on the offline provider — the
-"Simulated AI · no real LLM" badge is in frame because that is what the run was.
+Captured on 16 Aug 2026 from the live web app driving the real pipeline with the verified
+OpenRouter free route (`google/gemma-4-26b-a4b-it:free`) — the "Live AI · …" badge in frame
+is what the run actually used. Screenshots are taken from the running app after genuinely
+driving the full flow; nothing is staged. Viewport checks at 390px and 768px report zero
+horizontal overflow.
+
+**Landing** — the story in one screen: messy work in, explainable plan out, and the one rule
+that keeps the AI in its lane:
+
+![Landing page: hero, the three-step method, and the explainability promises](docs/screenshots/01-landing.png)
 
 **Natural-language intake** — the worker's messy dump, before anything is structured:
 
-![Intake screen with a messy shift dump typed into the textarea](docs/screenshots/01-intake.png)
+![Intake screen with a messy shift dump typed into the textarea](docs/screenshots/02-intake.png)
 
 **Review** — every extracted candidate is editable, rejectable, and shows its provenance
-(deadline hint, whether an estimate was stated or inferred, ambiguity flags):
+(deadline hint, whether an estimate was stated or inferred, validation reasons):
 
-![Review screen listing extracted task candidates with edit and approve controls](docs/screenshots/02-review.png)
+![Review screen listing extracted task candidates with edit and approve controls](docs/screenshots/03-review.png)
 
-**Deterministic plan** — ordering, priority bands, dependency waits, overdue markers, "next
-up" with its reasons, and the capacity warning when the day does not fit:
+**Deterministic plan** — "what next" with its reasons, the sequenced timeline with priority
+bands, and the scheduled/available capacity in the shift header:
 
-![Work plan with a sequenced task list, priority badges and capacity warnings](docs/screenshots/03-plan.png)
+![Work plan with a sequenced task list, priority badges and the what-next hero](docs/screenshots/04-plan.png)
 
-**Handover** — deterministic facts computed from the database, with an optional AI summary
+**Explainability** — the same plan with a scheduled task expanded to show the actual
+priority factors and technical reasoning behind its position:
+
+![Timeline entry expanded with the priority factor table and technical reasoning](docs/screenshots/04b-plan-explain.png)
+
+**Handover** — deterministic facts computed from the database, with the AI-written summary
 clearly labelled as drafted _from_ those facts:
 
-![Shift handover showing an AI-written summary above deterministic fact panels](docs/screenshots/04-handover.png)
+![Shift handover showing an AI-written summary above verified fact panels](docs/screenshots/05-handover.png)
+
+**Handover with AI prose** — after the worker requests the optional summary, it renders
+beneath the same facts:
+
+![Shift handover with the requested AI-written narrative above the verified facts](docs/screenshots/05b-handover-ai.png)
+
+**Mobile** — landing and workspace at 390px, and the plan at 768px:
+
+![Landing page at mobile width](docs/screenshots/06-mobile-landing.png)
+![Workspace intake at mobile width](docs/screenshots/07-mobile-app.png)
+![Plan view at tablet width](docs/screenshots/08-tablet-plan.png)

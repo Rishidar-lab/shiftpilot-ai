@@ -4,9 +4,10 @@ Scoring is deliberately conservative: a dimension is only rated fully when its e
 reproducible from this repository by a reviewer who trusts nothing the author says. Where a
 rubric dimension overlaps the submission matrix, the matrix is the source of truth.
 
-The rubric's seven dimensions are scored against the verified state of 2026-08-15
-(commit `804a027` + final docs pass; 283 tests / 21 files green; live OpenRouter
-free-tier verification recorded in `docs/eval/`).
+The rubric's seven dimensions are scored against the verified state of 2026-08-16
+(brand/UI release on `feat/shiftpilot-brand-ui`; 303 tests / 24 files green; live
+OpenRouter free-tier verification recorded in `docs/eval/`; live demo at
+https://shiftpilot-rkmx.onrender.com).
 
 ---
 
@@ -58,7 +59,7 @@ free-tier verification recorded in `docs/eval/`).
 
 - Strict TypeScript, ESLint (hooks rules as errors), Prettier clean, tsup + vite builds
   green; layered architecture, `packages/domain` zero runtime deps. 5/5
-- 283 tests / 21 files, fully offline, in-memory SQLite, no `globalThis` mocks; CI runs all
+- 303 tests / 24 files, fully offline, in-memory SQLite, no `globalThis` mocks; CI runs all
   gates + fresh-DB migration + idempotent re-migrate with no secrets. 5/5
 - Repo hygiene: `.gitignore` correct, `.env.example` only, secret scan (working tree, index,
   history) clean, no `dist`/`node_modules`/DBs tracked. 2/3

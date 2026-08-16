@@ -104,7 +104,7 @@ describe("HandoverView — AI prose", () => {
     await userEvent.click(screen.getByRole("button", { name: /write ai summary/i }))
 
     await screen.findByText("One item carried over")
-    expect(screen.getByText(/AI-written/)).toBeDefined()
+    expect(screen.getAllByText(/AI-written/).length).toBeGreaterThan(0)
     // The title rendered next to the reason comes from the facts.
     expect(screen.getAllByText("Unfreeze walk-in").length).toBeGreaterThan(0)
     expect(screen.getByText(/Past its deadline/)).toBeDefined()
