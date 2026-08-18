@@ -68,7 +68,14 @@ export function IntakeView({
   shiftId: string
   onApproved: () => void
 }) {
-  const [rawText, setRawText] = useState("")
+  // A landing quick-action can prefill the composer via sessionStorage. Read it
+  // once on mount and clear it so a later manual visit starts blank.
+  const [rawText, setRawText] = useState(() => {
+    if (typeof sessionStorage === "undefined") return ""
+    const intent = sessionStorage.getItem("shiftpilot:intent")
+    if (intent) sessionStorage.removeItem("shiftpilot:intent")
+    return intent ?? ""
+  })
   const [intake, setIntake] = useState<IntakeResult | null>(null)
   const [edits, setEdits] = useState<Record<string, DraftEdits>>({})
   const [actions, setActions] = useState<Record<string, Action>>({})

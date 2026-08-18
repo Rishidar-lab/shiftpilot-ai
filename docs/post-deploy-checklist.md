@@ -14,7 +14,7 @@ recording the demo.
 | 1   | Open the production URL           | The app renders. No blank page, no spinner that never resolves                                                                                                 |
 | 2   | Check the UI shell                | Header, "Shift" card, and the provider badge. The badge tells the truth: "Simulated AI · no real LLM" only if `AI_PROVIDER=fake`                               |
 | 3   | `GET /api/health`                 | `{"status":"ok",…}`. `providerIsFake` matches the `AI_PROVIDER` you configured                                                                                 |
-| 4   | Create a shift                    | "New shift (today, 09:00–17:00)" → the shift appears and is selected                                                                                           |
+| 4   | Create a shift                    | "+ New shift" → "Start shift" → the shift appears and is selected                                                                                              |
 | 5   | Paste the demo intake             | The messy block from `docs/demo-seed-data.md` goes into the textarea                                                                                           |
 | 6   | Extract                           | A loading state, then reviewable candidates. On OpenRouter this is the real call — it may take a few seconds                                                   |
 | 7   | Review an edit                    | Change a title (e.g. to "Restock aisle 3"); the field accepts it                                                                                               |

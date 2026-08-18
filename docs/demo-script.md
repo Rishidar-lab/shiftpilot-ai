@@ -28,7 +28,7 @@ terminal with environment variables is scrolled on screen at any point.
 One breath: "Work arrives as a messy dump — deadlines, durations, interruptions, one
 urgent call, two non-tasks buried in the middle. Whoever types that into a task list has
 already done all the parsing and all the prioritising themselves." Paste the seed block
-into the Intake tab and click **Extract tasks** while speaking.
+into the Pilot composer and click **Build my shift** while speaking.
 
 ## 0:20–0:35 — Principle
 

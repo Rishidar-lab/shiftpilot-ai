@@ -27,4 +27,18 @@ describe("LandingView", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Open ShiftPilot" })[0]!)
     expect(onOpen).toHaveBeenCalled()
   })
+
+  it("carries a quick action's intent into the composer, but a plain open carries none", async () => {
+    const onOpen = vi.fn()
+    render(<LandingView onOpen={onOpen} />)
+
+    await userEvent.click(screen.getByRole("button", { name: "Plan my shift" }))
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    const intent = onOpen.mock.calls[0]![0]
+    expect(typeof intent).toBe("string")
+    expect(intent.length).toBeGreaterThan(0)
+
+    await userEvent.click(screen.getByRole("button", { name: "Open today's shift →" }))
+    expect(onOpen).toHaveBeenLastCalledWith()
+  })
 })

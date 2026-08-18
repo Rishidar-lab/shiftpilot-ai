@@ -387,9 +387,9 @@ that keeps the AI in its lane:
 
 ![Landing page: hero, the three-step method, and the explainability promises](docs/screenshots/01-landing.png)
 
-**Natural-language intake** — the worker's messy dump, before anything is structured:
+**Pilot — natural-language intake** — the worker's messy dump, before anything is structured:
 
-![Intake screen with a messy shift dump typed into the textarea](docs/screenshots/02-intake.png)
+![Pilot composer with a messy shift dump typed into the textarea](docs/screenshots/02-intake.png)
 
 **Review** — every extracted candidate is editable, rejectable, and shows its provenance
 (deadline hint, whether an estimate was stated or inferred, validation reasons):
