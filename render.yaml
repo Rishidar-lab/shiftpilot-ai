@@ -49,11 +49,17 @@ services:
       # makes the demo path reproducible.
       - key: OPENROUTER_MODEL
         value: google/gemma-4-26b-a4b-it:free
-      # Free routes shed load under congestion (429) and occasionally return a
-      # malformed completion. Two retries absorb that; the provider's own
-      # backoff stays inside AI_TIMEOUT_MS, so a slow route still fails fast.
+      # Deliberately 0, and this is the opposite of the obvious choice.
+      #
+      # Retries do not extend the budget, they SUBDIVIDE it: the provider gives
+      # each attempt total/(retries+1). Measured on this exact demo workload,
+      # the free gemma route answers in 42s / 54s / 129s — so three starved
+      # 31s attempts fail every time, while one full-budget attempt succeeds in
+      # the normal case. A 429 therefore fails fast and honestly, and the human
+      # retries with the button the UI already gives them, rather than the
+      # server burning the whole budget on attempts too short to ever finish.
       - key: OPENROUTER_MAX_RETRIES
-        value: "2"
+        value: "0"
       - key: OPENROUTER_BASE_URL
         value: https://openrouter.ai/api/v1
       # Output ceiling. The canonical demo workload is 11 lines, and 11 extracted
@@ -65,12 +71,13 @@ services:
       # Total wall-clock budget for one inference, enforced by the API
       # (withTimeout) on top of the provider's own per-attempt deadline.
       #
-      # These two numbers are coupled: the provider divides the budget across
-      # attempts, so per-attempt = 90s / (2 retries + 1) = 30s. A free model
-      # extracting the full demo workload needs well over the 10s that the
-      # default 30s budget would have left it here.
+      # Sized against two real ceilings. Below: the free route needs 42-129s
+      # (measured) to extract the full 11-line demo workload. Above: Cloudflare
+      # fronts Render and cuts off an origin response at ~100s, so no setting
+      # can rescue the slowest tail — 95s buys every second actually available
+      # before the platform, not the application, ends the request.
       - key: AI_TIMEOUT_MS
-        value: "90000"
+        value: "95000"
       # Entered in the Render dashboard, never committed. Use a NEW rotated key.
       - key: OPENROUTER_API_KEY
         sync: false
