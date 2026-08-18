@@ -5,7 +5,7 @@ reproducible from this repository by a reviewer who trusts nothing the author sa
 rubric dimension overlaps the submission matrix, the matrix is the source of truth.
 
 The rubric's seven dimensions are scored against the verified state of 2026-08-16
-(final Week-1 state on `main`; 313 tests / 25 files green; live
+(final Week-1 state on `main`; 320 tests / 26 files green; live
 OpenRouter free-tier verification recorded in `docs/eval/`; live demo at
 https://shiftpilot-rkmx.onrender.com).
 
@@ -59,7 +59,7 @@ https://shiftpilot-rkmx.onrender.com).
 
 - Strict TypeScript, ESLint (hooks rules as errors), Prettier clean, tsup + vite builds
   green; layered architecture, `packages/domain` zero runtime deps. 5/5
-- 313 tests / 25 files, fully offline, in-memory SQLite, no `globalThis` mocks; CI runs all
+- 320 tests / 26 files, fully offline, in-memory SQLite, no `globalThis` mocks; CI runs all
   gates + fresh-DB migration + idempotent re-migrate with no secrets. 5/5
 - Repo hygiene: `.gitignore` correct, `.env.example` only, secret scan (working tree, index,
   history) clean, no `dist`/`node_modules`/DBs tracked. 2/3

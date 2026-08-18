@@ -34,7 +34,7 @@ It also ships as one deployable service — the React app and the API on a singl
 in one container — so the whole thing runs from a single free instance.
 
 Stack: TypeScript strict · React + Vite · Fastify · SQLite (Drizzle) · Zod · pnpm monorepo ·
-Vitest. 313 tests, fully offline CI, no secrets in CI.
+Vitest. 320 tests, fully offline CI, no secrets in CI.
 
 Verified live: a controlled 16/16 evaluation of the free-tier OpenRouter route (smoke
 HTTP 2xx; recorded fixtures; reports in the repo).
