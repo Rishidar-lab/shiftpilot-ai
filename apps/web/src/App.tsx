@@ -2,21 +2,27 @@ import { useCallback, useEffect, useState } from "react"
 
 import { ApiClient, ApiError } from "./api/client.js"
 import { ShiftWordmark } from "./components/Brand.js"
+import { ContextPanel } from "./components/ContextPanel.js"
 import { HandoverView } from "./components/HandoverView.js"
 import { IntakeView } from "./components/IntakeView.js"
 import { LandingView } from "./components/LandingView.js"
 import { PlanView } from "./components/PlanView.js"
 import { ShiftHeader } from "./components/ShiftHeader.js"
+import { ShiftSetupDialog, type ShiftSetupValues } from "./components/ShiftSetupDialog.js"
 import { WorkspaceRail } from "./components/WorkspaceRail.js"
 import type { HealthResponse, Shift } from "@shiftpilot/contracts"
 
 export type View = "intake" | "plan" | "handover"
 
+/** The intake view is the interaction surface; users see it as "Pilot". */
 const VIEWS: Array<{ id: View; label: string }> = [
-  { id: "intake", label: "Intake" },
+  { id: "intake", label: "Pilot" },
   { id: "plan", label: "Plan" },
   { id: "handover", label: "Handover" },
 ]
+
+/** How a landing quick-action carries its prefill text into the composer. */
+export const INTENT_KEY = "shiftpilot:intent"
 
 type Route = { page: "landing" } | { page: "workspace"; view: View }
 
@@ -76,7 +82,18 @@ export function App() {
   const [route, navigate] = useHashRoute()
 
   if (route.page === "landing") {
-    return <LandingView onOpen={() => navigate({ page: "workspace", view: "intake" })} />
+    return (
+      <LandingView
+        onOpen={(intent) => {
+          // A quick action prefills the composer; plain "Open" carries nothing.
+          // sessionStorage, not the backend — nothing is persisted until the
+          // existing intake flow persists it.
+          if (intent) sessionStorage.setItem(INTENT_KEY, intent)
+          else sessionStorage.removeItem(INTENT_KEY)
+          navigate({ page: "workspace", view: "intake" })
+        }}
+      />
+    )
   }
 
   return (
@@ -110,6 +127,7 @@ function WorkspaceView({
   const [statsKey, setStatsKey] = useState(0)
   const [creating, setCreating] = useState(false)
   const [shiftError, setShiftError] = useState<string | null>(null)
+  const [setupOpen, setSetupOpen] = useState(false)
 
   // Keep internal state aligned when the hash route changes (back/forward).
   useEffect(() => {
@@ -138,19 +156,26 @@ function WorkspaceView({
       .catch(() => setShiftError("Could not load shifts."))
   }, [client, loadHealth])
 
-  async function handleCreateShift() {
+  /** Turn a chosen local date + wall-clock time into an instant (browser zone). */
+  function localDateTime(date: string, time: string): string {
+    const d = new Date(`${date}T${time}`)
+    return Number.isNaN(d.getTime()) ? localTimeToday(9) : d.toISOString()
+  }
+
+  async function submitShift(values: ShiftSetupValues) {
     setShiftError(null)
     setCreating(true)
     try {
       const shift = await client.createShift({
-        date: todayLocalIso(),
-        startAt: localTimeToday(9),
-        endAt: localTimeToday(17),
-        timezone: localZone(),
-        role: null,
+        date: values.date || todayLocalIso(),
+        startAt: localDateTime(values.date, values.start),
+        endAt: localDateTime(values.date, values.end),
+        timezone: values.timezone || localZone(),
+        role: values.role.trim() ? values.role.trim() : null,
       })
       setShifts((prev) => [...prev, shift])
       setSelectedShiftId(shift.id)
+      setSetupOpen(false)
       setView("intake")
       onViewChange("intake")
     } catch (err) {
@@ -179,7 +204,7 @@ function WorkspaceView({
         shifts={shifts}
         selectedShiftId={selected?.id ?? null}
         onSelectShift={(id) => setSelectedShiftId(id)}
-        onCreateShift={handleCreateShift}
+        onCreateShift={() => setSetupOpen(true)}
         creating={creating}
         onViewChange={(next) => {
           setView(next)
@@ -256,7 +281,12 @@ function WorkspaceView({
               )}
             </div>
             <div className="side-col">
-              <ViewSidePanel view={view} onGoToPlan={() => onViewChange("plan")} />
+              <ContextPanel
+                view={view}
+                client={client}
+                shiftId={selected.id}
+                signal={refreshKey + statsKey}
+              />
             </div>
           </div>
         ) : (
@@ -266,67 +296,20 @@ function WorkspaceView({
               Shifts are how ShiftPilot scopes time, deadlines and handover. Create today's shift to
               begin.
             </p>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleCreateShift}
-              disabled={creating}
-            >
-              {creating ? "Creating…" : "Create today's shift"}
+            <button type="button" className="btn btn-primary" onClick={() => setSetupOpen(true)}>
+              Create today's shift
             </button>
           </div>
         )}
       </main>
-    </div>
-  )
-}
 
-function ViewSidePanel({ view, onGoToPlan }: { view: View; onGoToPlan: () => void }) {
-  return (
-    <>
-      <div className="panel panel-pad">
-        <p className="eyebrow" style={{ marginBottom: 8 }}>
-          Trust model
-        </p>
-        <p style={{ color: "var(--text-2)", fontSize: "0.9rem", lineHeight: 1.55 }}>
-          <strong style={{ color: "var(--text-1)" }}>AI interprets.</strong> A model turns language
-          into candidate tasks. <strong style={{ color: "var(--text-1)" }}>Human verifies.</strong>{" "}
-          Nothing becomes operational without approval.{" "}
-          <strong style={{ color: "var(--text-1)" }}>Deterministic software decides.</strong>{" "}
-          Priority, dependencies and time are computed in code.
-        </p>
-      </div>
-      <div className="panel panel-pad">
-        <p className="eyebrow" style={{ marginBottom: 8 }}>
-          Pipeline
-        </p>
-        <ol
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-            fontSize: "0.85rem",
-            color: "var(--text-2)",
-          }}
-        >
-          <li>1 · Input persisted</li>
-          <li>2 · AI extraction</li>
-          <li>3 · Schema validation</li>
-          <li>4 · Review required</li>
-          <li>5 · Human approval</li>
-          <li>6 · Planner recomputed</li>
-        </ol>
-        {view !== "plan" && (
-          <button
-            type="button"
-            className="btn btn-sm"
-            style={{ marginTop: 12 }}
-            onClick={onGoToPlan}
-          >
-            Open the plan →
-          </button>
-        )}
-      </div>
-    </>
+      <ShiftSetupDialog
+        open={setupOpen}
+        creating={creating}
+        error={shiftError}
+        onSubmit={submitShift}
+        onClose={() => setSetupOpen(false)}
+      />
+    </div>
   )
 }

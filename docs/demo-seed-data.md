@@ -11,7 +11,7 @@ nothing here depends on a live model.
 pnpm dev        # api :8787 + web :5173
 ```
 
-Open http://localhost:5173. Create the shift with **New shift (today, 09:00–17:00)**.
+Open http://localhost:5173. Create the shift: **Create today's shift** → **Start shift** (defaults to today, 09:00–17:00).
 The badge in the header should read **Simulated AI · no real LLM** — that is the honest
 label for what the demo is.
 
@@ -21,7 +21,7 @@ A customer-service/stockroom worker starts a shift with a messy dump of what is 
 head: deadlines, durations, one dependent task, one urgent call, one vague item, one
 non-task, and two heavy jobs that will not fit the day.
 
-## First intake — the paste block (copy verbatim into the Intake textarea)
+## First intake — the paste block (copy verbatim into the Pilot composer)
 
 ```
 Restock aisle 3 by 11am - takes about 45 minutes
@@ -82,7 +82,7 @@ recaptured chore cannot double up.
 The scenario supports three "pause here" states, each independently reproducible:
 
 1. **After extraction** — review cards + ambiguity flag visible (review step).
-2. **After approval** — nine active tasks; Intake tab still shows the approved intake.
+2. **After approval** — nine active tasks; Pilot tab still shows the approved intake.
 3. **After second intake** — duplicate visibly rejected (dedupe guard).
 
 ## Re-running

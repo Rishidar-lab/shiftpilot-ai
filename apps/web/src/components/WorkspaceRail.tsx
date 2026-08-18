@@ -7,7 +7,7 @@ import { FakeProviderBadge } from "./FakeProviderBadge.js"
 const NAV: Array<{ id: View; label: string; icon: ReactNode }> = [
   {
     id: "intake",
-    label: "Intake",
+    label: "Pilot",
     icon: (
       <svg
         viewBox="0 0 16 16"
@@ -125,7 +125,7 @@ export function WorkspaceRail({
           onClick={onCreateShift}
           disabled={creating}
         >
-          {creating ? "Creating…" : "+ New shift (today, 09:00–17:00)"}
+          {creating ? "Creating…" : "+ New shift"}
         </button>
       </div>
 

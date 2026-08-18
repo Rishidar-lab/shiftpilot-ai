@@ -2314,3 +2314,373 @@ label.field-label {
     min-height: 44px;
   }
 }
+
+/* =========================================================================
+   Final product experience — command-first landing, shift setup, context rail
+   ========================================================================= */
+
+/* --- command-first hero --------------------------------------------------- */
+.hero-command {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: clamp(48px, 9vh, 104px) var(--s-5) var(--s-8);
+  text-align: center;
+}
+.hero-kicker {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  margin-bottom: var(--s-4);
+}
+.hero-command .hero-sub {
+  color: var(--text-2);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  max-width: 38rem;
+  margin: var(--s-4) auto var(--s-6);
+}
+.command-card {
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xl);
+  padding: clamp(20px, 4vw, 30px);
+  box-shadow: var(--sh-md);
+  text-align: left;
+}
+.command-question {
+  font-size: 1.12rem;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: var(--s-4);
+}
+.command-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-bottom: var(--s-5);
+}
+.command-chip {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-3);
+  color: var(--text-1);
+  border-radius: var(--r-pill);
+  padding: 0.5rem 1rem;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition:
+    color var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease);
+}
+.command-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+.command-open {
+  width: 100%;
+  justify-content: center;
+}
+.hero-principle {
+  display: flex;
+  gap: var(--s-3);
+  justify-content: center;
+  align-items: center;
+  margin-top: var(--s-6);
+  color: var(--text-3);
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+}
+.hero-principle .dot {
+  color: var(--border-strong);
+}
+
+/* --- how-it-works (technical story, moved out of the hero) ---------------- */
+.how {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--s-8) var(--s-5);
+  border-top: 1px solid var(--border);
+}
+.how-head {
+  margin-bottom: var(--s-6);
+}
+.how-title {
+  font-size: clamp(1.3rem, 3vw, 1.75rem);
+  font-weight: 650;
+  color: var(--text-1);
+  margin-top: var(--s-2);
+}
+.how-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-5);
+}
+.how-grid p {
+  color: var(--text-2);
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+.how-grid strong {
+  color: var(--text-1);
+}
+.how-stack {
+  margin-top: var(--s-6);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+/* --- shift setup dialog --------------------------------------------------- */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-4);
+  z-index: 50;
+}
+.dialog {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xl);
+  box-shadow: var(--sh-md);
+  width: min(520px, 100%);
+  max-height: calc(100vh - 2 * var(--s-4));
+  overflow-y: auto;
+  padding: clamp(20px, 4vw, 28px);
+}
+.dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+.dialog-title {
+  font-size: 1.25rem;
+  font-weight: 650;
+  color: var(--text-1);
+  margin-top: 2px;
+}
+.dialog-close {
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: var(--r-sm);
+  display: inline-flex;
+}
+.dialog-close:hover {
+  color: var(--text-1);
+  background: var(--surface-2);
+}
+.dialog-sub {
+  color: var(--text-2);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: var(--s-2) 0 var(--s-5);
+}
+.dialog-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-4);
+}
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-group-wide {
+  grid-column: 1 / -1;
+}
+.field-label {
+  font-size: 0.8rem;
+  color: var(--text-2);
+  font-weight: 500;
+}
+.field-optional {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-6);
+}
+.dialog-actions-primary {
+  display: flex;
+  gap: var(--s-2);
+}
+
+/* --- contextual right rail ------------------------------------------------ */
+.ctx-eyebrow {
+  font-size: 0.72rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  margin-bottom: var(--s-3);
+  font-weight: 600;
+}
+.ctx-run {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.ctx-run-step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s-3);
+  align-items: start;
+}
+.ctx-run-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+}
+.ctx-run-title {
+  color: var(--text-1);
+  font-size: 0.9rem;
+  font-weight: 550;
+}
+.ctx-run-copy {
+  color: var(--text-3);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin-top: 2px;
+}
+.ctx-next {
+  margin-bottom: var(--s-4);
+}
+.ctx-next-label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+.ctx-next-title {
+  color: var(--text-1);
+  font-weight: 600;
+  font-size: 0.98rem;
+}
+.ctx-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-2);
+}
+.ctx-metric {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ctx-metric-value {
+  font-size: 1.15rem;
+  font-weight: 650;
+  color: var(--text-1);
+}
+.ctx-metric-label {
+  font-size: 0.72rem;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ctx-metric-warn .ctx-metric-value {
+  color: var(--warning);
+}
+.ctx-metric-ok .ctx-metric-value {
+  color: var(--success);
+}
+.ctx-how {
+  padding: 0;
+  overflow: hidden;
+}
+.ctx-how-summary {
+  cursor: pointer;
+  padding: var(--s-4);
+  font-size: 0.85rem;
+  color: var(--text-2);
+  font-weight: 550;
+  list-style: none;
+}
+.ctx-how-summary::-webkit-details-marker {
+  display: none;
+}
+.ctx-how-summary::before {
+  content: "▸";
+  margin-right: 8px;
+  color: var(--text-3);
+}
+.ctx-how[open] .ctx-how-summary::before {
+  content: "▾";
+}
+.ctx-how-body {
+  padding: 0 var(--s-4) var(--s-4);
+}
+.ctx-how-body p {
+  color: var(--text-2);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+.ctx-how-body strong {
+  color: var(--text-1);
+}
+.ctx-how-tech {
+  margin-top: var(--s-3);
+  color: var(--text-3);
+  font-size: 0.8rem;
+}
+
+/* --- mobile for the new surfaces (wins: appears after base rules) --------- */
+@media (max-width: 560px) {
+  .dialog-grid {
+    grid-template-columns: 1fr;
+  }
+  .how-grid {
+    grid-template-columns: 1fr;
+  }
+  .dialog-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .dialog-actions-primary {
+    flex-direction: column-reverse;
+  }
+  .dialog-actions .btn {
+    min-height: 44px;
+    width: 100%;
+  }
+  .command-chip {
+    min-height: 44px;
+  }
+  /* Give the header and footer links a real tap height on a phone. */
+  .landing-nav .btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .footer-links a {
+    display: inline-block;
+    padding: 6px 0;
+  }
+}
