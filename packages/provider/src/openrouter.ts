@@ -294,11 +294,44 @@ export function readCompletionContent(payload: ChatCompletionResponse): Extracti
   }
 
   const parsed = tryParseJsonContent(content)
-  if (parsed !== null) return { ok: true, raw: parsed }
+  if (parsed !== null) return { ok: true, raw: normalizeEmptyLists(parsed) }
   return {
     ok: false,
     failure: { kind: "invalid_response", detail: "response was not valid JSON" },
   }
+}
+
+/**
+ * Free models express "none" for a list field as `null` about as often as `[]`.
+ * The contract requires an array, so an untouched `null` fails every candidate
+ * at once and the whole extraction is reported as malformed provider output —
+ * observed live, where a single `"dependencies": null` rejected all 11 tasks.
+ *
+ * Rewriting that null to an empty list adds no information and invents no task:
+ * both spellings say the model found nothing. Anything else — a string, an
+ * object, a populated list — is left exactly as emitted for the schema and the
+ * domain policy to judge, which is where every real decision still belongs.
+ */
+const EMPTY_LIST_FIELDS = ["dependencies", "ambiguity"] as const
+
+function normalizeEmptyLists(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) return raw
+  const envelope = raw as { tasks?: unknown }
+  if (!Array.isArray(envelope.tasks)) return raw
+  const tasks = envelope.tasks.map((task) => {
+    if (typeof task !== "object" || task === null) return task
+    const record = task as Record<string, unknown>
+    let changed = false
+    const next: Record<string, unknown> = { ...record }
+    for (const field of EMPTY_LIST_FIELDS) {
+      if (field in record && record[field] === null) {
+        next[field] = []
+        changed = true
+      }
+    }
+    return changed ? next : task
+  })
+  return { ...envelope, tasks }
 }
 
 /**

@@ -307,7 +307,7 @@ pnpm format           # prettier --check .
 pnpm build            # api bundle (tsup) + web bundle (vite)
 ```
 
-**309 tests** cover the domain engines (deadlines/timezones, dependency cycles, duplicate
+**311 tests** cover the domain engines (deadlines/timezones, dependency cycles, duplicate
 approval, What Next, handover fallback), the provider boundary (free-model guard, failure
 mapping, degraded paths), the API (rate limiting, intake, review, approval), and the web
 UI (loading/error/retry states, landing routing, demo composer). CI runs install → lint →

@@ -108,7 +108,7 @@ honestly attest to.
 - Live deployment on Render Free, single service, React at `/` and the API at `/api/*`.
 - Real free-tier OpenRouter inference verified through Render's stored secret, including
   across a redeploy, on the pinned `google/gemma-4-26b-a4b-it:free` route.
-- 309 tests across 24 files; lint, typecheck, format, build all green.
+- 311 tests across 24 files; lint, typecheck, format, build all green.
 - Secret scan clean across working tree, index and full history.
 - README, architecture, deployment runbook, interview defense, demo script, LinkedIn draft
   and the submission matrix all final and consistent with the shipped code.

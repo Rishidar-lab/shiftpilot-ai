@@ -403,6 +403,48 @@ describe("readCompletionContent", () => {
     if (trailing.ok) expect(trailing.raw).toEqual({ tasks: [{ title: "x" }] })
   })
 
+  it("reads a null dependency list as an empty one, without inventing anything", () => {
+    // Observed live: a single "dependencies": null rejected all 11 candidates.
+    const attempt = readCompletionContent({
+      choices: [
+        {
+          message: {
+            content:
+              '{"tasks":[{"title":"Restock","dependencies":null,"ambiguity":null,"category":"other"}]}',
+          },
+        },
+      ],
+    } as ChatCompletionResponse)
+    expect(attempt.ok).toBe(true)
+    if (attempt.ok) {
+      const task = (attempt.raw as { tasks: Array<Record<string, unknown>> }).tasks[0]!
+      expect(task.dependencies).toEqual([])
+      expect(task.ambiguity).toEqual([])
+      // Everything else is passed through untouched for the schema to judge.
+      expect(task.title).toBe("Restock")
+      expect(task.category).toBe("other")
+    }
+  })
+
+  it("leaves a populated or non-list value exactly as the model emitted it", () => {
+    const attempt = readCompletionContent({
+      choices: [
+        {
+          message: {
+            content: '{"tasks":[{"title":"A","dependencies":["#1"],"ambiguity":"vague"}]}',
+          },
+        },
+      ],
+    } as ChatCompletionResponse)
+    expect(attempt.ok).toBe(true)
+    if (attempt.ok) {
+      const task = (attempt.raw as { tasks: Array<Record<string, unknown>> }).tasks[0]!
+      expect(task.dependencies).toEqual(["#1"])
+      // Not a list and not null: the schema, not this helper, rejects it.
+      expect(task.ambiguity).toBe("vague")
+    }
+  })
+
   it("rejects prose that contains no recoverable JSON", () => {
     const prose = readCompletionContent({
       choices: [
