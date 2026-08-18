@@ -105,6 +105,29 @@ plan ("what next, and why"), and an end-of-shift handover captures what actually
   per-IP limiter is right-sized for the problem and trivially replaceable. The docs call
   out the distributed-limiter requirement as the scaling step.
 
+## Why does the deployed demo lose its data, and why is that not a bug?
+
+- Render Free has no disk. The database is deliberately placed at `/tmp` rather than a
+  `/data` path that would imply a volume nobody mounted, so the reset is visible in the
+  configuration instead of being a surprise at runtime. Migrations run on every boot, so
+  an empty database is a working database.
+- The fix is one line and no code: mount a disk and point `DATABASE_PATH` at it. The image
+  and the application do not change. Persistence was scoped out for Week 1, not missed.
+
+## Why does a big workload sometimes time out on the hosted URL?
+
+- Measured, not hand-waved: the full 11-line demo workload costs ~730 completion tokens,
+  which the free route delivered in 42s, 54s and 129s across samples. Cloudflare fronts
+  Render and terminates an origin response at ~100s, so the slow tail cannot complete on
+  the hosted URL at any timeout setting. Locally there is no such ceiling.
+- What matters is the failure shape. The raw input is persisted **before** the provider is
+  called, so a timeout costs the worker their inference and never their typing; the UI says
+  capacity is busy and offers a retry; no task is created from a failed extraction.
+- Retries are set to 0 on the deployment on purpose. The provider divides the total budget
+  across attempts, so three attempts of 31s each fail on a route that needs 42s+, while one
+  full-budget attempt succeeds. Retrying less made it more reliable, which is the opposite
+  of the obvious configuration and worth being able to explain.
+
 ## Why are spend controls "a brake, not a cap"?
 
 - The application cannot read a provider account balance. It enforces what it can —
@@ -159,6 +182,9 @@ thresholds in CI, and the stretch backlog in `docs/architecture.md` §10.
 - No coverage threshold in CI (coverage is high and visible; enforcement is not wired).
 - No authentication or multi-user isolation; single-process SQLite; spend brake not cap.
 - The eval is a controlled verification, not a benchmark: no accuracy percentage, no
-  labelled ground truth, and `openrouter/free`'s underlying model varies per request.
-- Demo/recording, public repo, LinkedIn post and final submission are the four remaining
-  external actions (`docs/week1-submission-matrix.md`).
+  labelled ground truth, and `openrouter/free`'s underlying model varies per request, which is why the deployment pins an explicit `:free` model instead.
+- The hosted demo cannot extract the largest workloads inside the platform's ~100s
+  response ceiling on a free model; the failure is handled honestly rather than hidden.
+- Demo recording, the LinkedIn post with the Innovation Hacks tag, the follow/screenshot/DM
+  step and the final submission are the remaining external actions
+  (`docs/final-submission-checklist.md`).

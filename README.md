@@ -10,6 +10,12 @@ dependencies, interruptions — and ShiftPilot turns it into an ordered, priorit
 dependency-aware plan. No hidden decisions: a human reviews every extracted task before it
 becomes real, and a deterministic engine (not the AI) does all scheduling arithmetic.
 
+**Live demo:** https://shiftpilot-rkmx.onrender.com · **Repository:**
+https://github.com/Rishidar-lab/shiftpilot-ai
+
+> The live instance is Render Free: it spins down when idle, so the first request after a
+> quiet period takes ~30-60s to cold-start, and its database is deliberately ephemeral.
+
 - Week-1 deliverable for the **Innovation Hacks AI Internship 2026**.
 - Live external AI is verified on the **OpenRouter free tier** (controlled evaluation,
   `docs/eval/`).
@@ -301,7 +307,7 @@ pnpm format           # prettier --check .
 pnpm build            # api bundle (tsup) + web bundle (vite)
 ```
 
-**303 tests** cover the domain engines (deadlines/timezones, dependency cycles, duplicate
+**309 tests** cover the domain engines (deadlines/timezones, dependency cycles, duplicate
 approval, What Next, handover fallback), the provider boundary (free-model guard, failure
 mapping, degraded paths), the API (rate limiting, intake, review, approval), and the web
 UI (loading/error/retry states, landing routing, demo composer). CI runs install → lint →
@@ -330,9 +336,16 @@ Vitest
   deployment, no audit UI. Week-1 scope.
 - **The deployed demo does not keep data.** Render Free has no disk, so the database resets
   on restart, redeploy or spin-down. Deliberate — see "Deployment and data persistence".
-- **Free-tier best effort.** `openrouter/free` serves models of varying quality and shared
-  quotas; a capable `:free` model is recommended for reproducible runs. This is a spend
-  brake, not a monetary guarantee — configure limits at the provider console too.
+- **Free-tier best effort.** The deployment pins `google/gemma-4-26b-a4b-it:free` rather
+  than the `openrouter/free` alias, which re-picks the model per request and can land on a
+  reasoning model that returns an empty or truncated completion. This is a spend brake, not
+  a monetary guarantee — configure limits at the provider console too.
+- **Large workloads can outrun the free tier on the hosted demo.** Extracting the full
+  11-line demo workload costs ~730 completion tokens, which the free route delivered in
+  42-129s across measured samples. Cloudflare cuts off a Render response at ~100s, so the
+  slowest tail cannot complete on the hosted URL no matter how the timeout is set. Shorter
+  workloads (the common case) return comfortably; running locally has no such ceiling. The
+  failure is handled honestly — the raw input is saved and the UI offers a retry.
 - **No labelled ground truth.** The live evaluation records what the pipeline did per case;
   it is not a scientific benchmark and claims no accuracy percentage.
 - Deadline vocabulary is finite; unrecognised phrases are flagged for the reviewer.

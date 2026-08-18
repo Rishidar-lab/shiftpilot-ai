@@ -1,6 +1,5 @@
 import type { HandoverFacts, ShiftContext } from "@shiftpilot/contracts"
 
-import { perAttemptTimeoutMs } from "./claude.js"
 import {
   EXTRACTION_PROMPT_ID,
   EXTRACTION_PROMPT_VERSION,
@@ -183,12 +182,25 @@ export class OpenRouterProvider implements AiProvider {
   > {
     const url = `${this.options.baseUrl ?? OPENROUTER_DEFAULT_BASE_URL}/chat/completions`
     const maxRetries = this.options.maxRetries ?? 0
-    const perAttemptMs = perAttemptTimeoutMs(this.options.timeoutMs, maxRetries)
+
+    // Budget by a shared DEADLINE, not by an equal share per attempt.
+    //
+    // Splitting the total evenly is the intuitive choice and it is wrong here:
+    // retries exist for 429s, which fail in about a second, while a real
+    // generation on a free route legitimately needs most of the budget. Dividing
+    // by (retries + 1) therefore starves the only attempt that was ever going to
+    // do work — measured, three 31s slices could not finish an extraction the
+    // route completes in 42s, so enabling retries made the call strictly less
+    // reliable. Against a deadline, a cheap 429 costs the next attempt almost
+    // nothing and a slow success can still use the whole budget.
+    const deadline = Date.now() + this.options.timeoutMs
 
     for (let attempt = 0; ; attempt++) {
+      const remainingMs = deadline - Date.now()
+      if (remainingMs <= 0) return { ok: false, failure: { kind: "timeout" } }
       const attemptSignal = signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(perAttemptMs)])
-        : AbortSignal.timeout(perAttemptMs)
+        ? AbortSignal.any([signal, AbortSignal.timeout(remainingMs)])
+        : AbortSignal.timeout(remainingMs)
 
       let raw: Response
       try {
@@ -214,7 +226,15 @@ export class OpenRouterProvider implements AiProvider {
         const baseMs = Number.isFinite(seconds)
           ? seconds * 1000
           : (this.options.retryBackoffMs ?? 5_000) * 2 ** attempt
-        await new Promise((resolve) => setTimeout(resolve, Math.min(60_000, baseMs)))
+        // A backoff we cannot afford means the deadline ends this call, so report
+        // the rate limit that actually caused it rather than sleeping to the
+        // deadline and blaming a timeout. Note a zero backoff (retry-after: 0)
+        // is a valid instruction to retry at once, not a reason to give up.
+        const sleepMs = Math.min(60_000, baseMs)
+        if (sleepMs >= deadline - Date.now()) {
+          return { ok: false, failure: { kind: "rate_limited" } }
+        }
+        await new Promise((resolve) => setTimeout(resolve, sleepMs))
         continue
       }
 

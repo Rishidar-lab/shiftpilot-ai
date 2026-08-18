@@ -106,7 +106,7 @@ git push origin v1.0.0-week1
 
 gh release create v1.0.0-week1 \
   --title "ShiftPilot v1.0.0-week1" \
-  --notes "Week-1 submission for the Innovation Hacks AI Internship 2026. Capture → AI extraction → human review → deterministic planning → handover. 303 tests, offline by default, live OpenRouter free-tier verification recorded in docs/eval/."
+  --notes "Week-1 submission for the Innovation Hacks AI Internship 2026. Capture → AI extraction → human review → deterministic planning → handover. 309 tests, offline by default, live OpenRouter free-tier verification recorded in docs/eval/."
 ```
 
 ## Not done here, on purpose

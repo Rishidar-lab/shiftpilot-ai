@@ -49,17 +49,13 @@ services:
       # makes the demo path reproducible.
       - key: OPENROUTER_MODEL
         value: google/gemma-4-26b-a4b-it:free
-      # Deliberately 0, and this is the opposite of the obvious choice.
-      #
-      # Retries do not extend the budget, they SUBDIVIDE it: the provider gives
-      # each attempt total/(retries+1). Measured on this exact demo workload,
-      # the free gemma route answers in 42s / 54s / 129s — so three starved
-      # 31s attempts fail every time, while one full-budget attempt succeeds in
-      # the normal case. A 429 therefore fails fast and honestly, and the human
-      # retries with the button the UI already gives them, rather than the
-      # server burning the whole budget on attempts too short to ever finish.
+      # Safe to enable because the provider budgets against a shared DEADLINE
+      # rather than giving each attempt an equal slice. A 429 costs about a
+      # second, so retrying it leaves the real generation attempt essentially the
+      # whole window — whereas an even split would hand each attempt 31s on a
+      # route measured at 42-129s, and every attempt would fail.
       - key: OPENROUTER_MAX_RETRIES
-        value: "0"
+        value: "2"
       - key: OPENROUTER_BASE_URL
         value: https://openrouter.ai/api/v1
       # Output ceiling. The canonical demo workload is 11 lines, and 11 extracted

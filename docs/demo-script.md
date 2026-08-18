@@ -11,10 +11,14 @@ key, `.env`, or any credential on screen.
   `http://localhost:8080`.
 - **The deployed demo** — the live `*.onrender.com` URL once the service is running.
 
-If you record against the deployed demo, two rules. **Wake it first:** free instances spin
-down after inactivity and cold-start in roughly 30–60 seconds — open the URL, wait for the
-app, and only then hit record, or the video opens on a spinner. **Never show the Render
+If you record against the deployed demo, three rules. **Wake it first:** free instances
+spin down after inactivity and cold-start in roughly 30–60 seconds — open the URL, wait for
+the app, and only then hit record, or the video opens on a spinner. **Never show the Render
 dashboard**, its Environment tab, or any settings page: that is where the secret lives.
+**Do not paste the full 11-line workload live on camera:** measured free-route latency for
+that input is 42–129s and Cloudflare cuts a Render response off at ~100s, so the longest
+runs cannot finish on the hosted URL. Record the real extraction locally (no proxy ceiling),
+or use a shorter workload live and say plainly that the full dump is a free-tier stress case.
 
 Prerequisites: seed block from `docs/demo-seed-data.md` ready to paste. No code and no
 terminal with environment variables is scrolled on screen at any point.
@@ -81,10 +85,10 @@ if the model is offline, the facts render and the handover says so — degraded 
 a blank screen." (Optional +30 s: stop the API and show the **API unavailable** banner
 with a retry button — no silent fallback.)
 
-## Final 15–30 s — Architecture and substance
+## 3:00–3:20 — Architecture, tests, links
 
 Fast close with on-screen labels, no code: "Clean separation — the AI reads language, the
-domain decides everything operational. Human approval is a hard gate. 283 tests, fully
+domain decides everything operational. Human approval is a hard gate. 309 tests, fully
 offline CI, no secrets in CI. Monorepo: React + Fastify + SQLite, TypeScript strict."
 Mention the live free-tier OpenRouter verification only if it fits the moment (see
 "Recording with real AI" below). End on the one-liner: **"AI interprets. Human verifies.

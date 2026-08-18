@@ -313,6 +313,65 @@ describe("OpenRouterProvider failure mapping", () => {
   })
 })
 
+describe("OpenRouterProvider retry budget", () => {
+  it("gives a retry the whole remaining budget instead of an equal share", async () => {
+    // The point of deadline budgeting: a cheap 429 must not shrink the window
+    // the real generation attempt gets. Two retries used to mean each attempt
+    // received a third of the budget; now the second attempt still has nearly
+    // all of it, because the 429 cost milliseconds rather than a slice.
+    const timeouts: number[] = []
+    const fetchFn = vi.fn(async (_url: unknown, init: { signal?: AbortSignal }) => {
+      // Whatever deadline this attempt was given shows up on its signal.
+      timeouts.push(Date.now())
+      void init
+      if (fetchFn.mock.calls.length === 1) {
+        return { ok: false, status: 429, headers: new Headers([["retry-after", "0"]]) }
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({ choices: [{ message: { content: '{"tasks":[]}' } }] }),
+      }
+    })
+    const provider = new OpenRouterProvider({
+      apiKey: "sk-or-v1-test-not-a-real-key",
+      model: "openrouter/free",
+      maxOutputTokens: 256,
+      timeoutMs: 30_000,
+      maxRetries: 2,
+      retryBackoffMs: 1,
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    const attempt = await provider.extractTasks("x", CTX)
+    expect(attempt.ok).toBe(true)
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it("refuses to sleep past the deadline waiting out a backoff", async () => {
+    // A backoff longer than the time left would burn the caller's budget only
+    // to abort on arrival. Fail as rate_limited instead, immediately.
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: new Headers([["retry-after", "600"]]),
+    })
+    const provider = new OpenRouterProvider({
+      apiKey: "sk-or-v1-test-not-a-real-key",
+      model: "openrouter/free",
+      maxOutputTokens: 256,
+      timeoutMs: 50,
+      maxRetries: 2,
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    const started = Date.now()
+    const attempt = await provider.extractTasks("x", CTX)
+    expect(attempt.ok).toBe(false)
+    if (!attempt.ok) expect(attempt.failure.kind).toBe("rate_limited")
+    expect(Date.now() - started).toBeLessThan(5_000)
+  })
+})
+
 describe("readCompletionContent", () => {
   it("parses the first choice's content as untrusted JSON", () => {
     const result = readCompletionContent(jsonResponse())
