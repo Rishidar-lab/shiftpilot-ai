@@ -41,8 +41,19 @@ services:
         value: openrouter
       # Free route only. assertFreeOpenRouterModel rejects anything else at
       # boot and before every inference; there is no paid fallback.
+      #
+      # PINNED, not the `openrouter/free` auto-router. The auto-router is free
+      # but picks the model per request, and a reasoning model that spends the
+      # whole output budget on hidden reasoning returns an empty completion —
+      # observed live as a 502 ai_invalid_response. A pinned non-reasoning model
+      # makes the demo path reproducible.
       - key: OPENROUTER_MODEL
-        value: openrouter/free
+        value: google/gemma-4-26b-a4b-it:free
+      # Free routes shed load under congestion (429) and occasionally return a
+      # malformed completion. Two retries absorb that; the provider's own
+      # backoff stays inside AI_TIMEOUT_MS, so a slow route still fails fast.
+      - key: OPENROUTER_MAX_RETRIES
+        value: "2"
       - key: OPENROUTER_BASE_URL
         value: https://openrouter.ai/api/v1
       # Entered in the Render dashboard, never committed. Use a NEW rotated key.
