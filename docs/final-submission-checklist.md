@@ -11,29 +11,31 @@ an account, a camera, or a form. The engineering side is finished and frozen; se
 
 ## MUST COMPLETE BEFORE AUGUST 20
 
-- [x] Final live UI verified
-- [x] GitHub CI green
-- [x] `v1.0.0-week1` created
-- [ ] Demo video recorded
-- [ ] Demo video uploaded
-- [ ] Demo URL copied
-- [ ] LinkedIn post finalized
-- [ ] GitHub URL included
-- [ ] Live URL included
-- [ ] Demo URL included
+Engineering is frozen and verified (see "Already done"). Every box below is a human action —
+none is ticked on your behalf.
+
+- [ ] Demo recorded
+- [ ] Demo reviewed once
+- [ ] Demo uploaded
+- [ ] Video URL copied
+- [ ] LinkedIn draft has GitHub URL
+- [ ] LinkedIn draft has live URL
+- [ ] LinkedIn draft has video URL
 - [ ] Innovation Hacks tagged
-- [ ] LinkedIn post published
-- [ ] LinkedIn URL copied
-- [ ] Follow `veerakarthick235`
+- [ ] LinkedIn published
+- [ ] LinkedIn post URL copied
+- [ ] Followed `veerakarthick235`
 - [ ] Follow screenshot captured
 - [ ] Screenshot DMed
 - [ ] GitHub URL submitted
-- [ ] Demo video URL submitted
+- [ ] Video URL submitted
 - [ ] LinkedIn URL submitted
-- [ ] Submission confirmation captured
+- [ ] Submission confirmation screenshot saved
 
-The three boxes already ticked are repository facts you can re-check yourself: the tag
-exists on `main`, CI is green on that commit, and the live URL serves the final UI.
+Repository facts you can re-check yourself (already true): `main` is clean at `2be57b6`,
+`v1.0.0-week1` and `v1.1.0-week1` both exist, CI is green, and the live URL serves the final
+UI. The demo script is `docs/demo-narration-final.md`; the primary live workload is locked
+there.
 
 ---
 
@@ -60,15 +62,18 @@ exists on `main`, CI is green on that commit, and the live URL serves the final 
 
 ## 1. Record the demo
 
-Script: `docs/demo-script.md` (2–4 minutes, timed section by section).
+Word-for-word narration: `docs/demo-narration-final.md` (~3:00–3:20). The **primary live
+workload is locked** there (three lines: a 2pm deadline, durations, an urgent call, and a
+dependency). Do not use the eleven-line stress workload in the recording.
 
-- [ ] Wake the live service first if recording against it — Render Free cold-starts in
-      30–60s, and an unwoken instance opens the video on a spinner.
+- [ ] Wake the live service first — Render Free cold-starts in ~30–60s, then wait ~30s more.
+- [ ] Confirm `/api/health` shows `providerIsFake: false` before using the live route.
 - [ ] Never show the Render dashboard, its Environment tab, `.env`, or terminal history.
-- [ ] Record the real AI extraction **locally** rather than on the hosted URL. The full
-      11-line workload takes 42–129s on the free route and Cloudflare cuts a Render
-      response off at ~100s; locally there is no such ceiling. If you do extract live, use
-      a shorter workload and say plainly that the full dump is a free-tier stress case.
+- [ ] **Mode A (live):** rehearsed clean on 18 Aug (201 in ~52s). Expect the AI step to take
+      up to ~a minute; narrate the wait. **Mode B (fallback):** local build on the offline
+      provider, "Simulated AI · no real LLM" badge left visible, with the one-line disclaimer
+      from the narration. If the live route returns `503 ai_unavailable`, switch to Mode B —
+      do not wait hours or change providers.
 
 ## 2. Publish the LinkedIn post
 
@@ -104,7 +109,10 @@ honestly attest to.
 ## Already done (no action needed)
 
 - Public repository, `main` pushed, MIT licensed, CI green.
-- `v1.0.0-week1` tagged on the final commit, GitHub Release published.
+- `v1.0.0-week1` and `v1.1.0-week1` tagged and released (v1.1.0 = the final product
+  experience; v1.0.0 preserved, never moved).
+- Word-for-word demo narration ready (`docs/demo-narration-final.md`) with the primary live
+  workload locked and a rehearsed live run (201 in ~52s on 18 Aug).
 - Live deployment on Render Free, single service, React at `/` and the API at `/api/*`.
 - Real free-tier OpenRouter inference verified through Render's stored secret, including
   across a redeploy, on the pinned `google/gemma-4-26b-a4b-it:free` route.

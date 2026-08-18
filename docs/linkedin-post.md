@@ -24,7 +24,8 @@ ShiftPilot turns that dump into an ordered, explainable work plan — with one r
 - **Humans hold the power** — every extracted candidate is a draft; nothing becomes a
   task until a person edits, rejects, or approves it.
 - **Scheduling is deterministic** — priority, ordering, deadlines (shift-local, IANA
-  timezone), dependency edges, overflow flags, "what should I do next?" and end-of-shift
+  timezone), dependency edges, overflow flags, an explainable "what should I do next?" (with
+  reasons you can open), live replanning the moment a task completes, and end-of-shift
   handover are all computed by tested domain engines. The model never sets a priority.
 - **Failure is designed** — invalid model output, a rate-limited route, or a provider
   outage degrades gracefully and honestly; the app never pretends the AI is on when it is
