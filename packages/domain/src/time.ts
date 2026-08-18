@@ -21,6 +21,26 @@ import type { ShiftContext } from "@shiftpilot/contracts"
 const MINUTE_MS = 60_000
 
 /**
+ * The instant at which scheduling may begin for this shift, given the current
+ * time — `now` clamped to the shift's own bounds `[startAt, endAt]`:
+ *
+ *   before the shift   → shiftStart   (a 09:00 shift planned at 02:55 starts 09:00)
+ *   during the shift   → now
+ *   after the shift     → shiftEnd     (zero remaining window)
+ *
+ * This is the single canonical horizon. The scheduler, the capacity figure and
+ * "what next" all derive from it, so they can never disagree about when work
+ * may start. Planning never runs against pre-shift wall-clock time (which would
+ * inflate capacity to `end - now`) and never schedules into an ended shift.
+ */
+export function effectivePlanningStart(shift: { startAt: string; endAt: string }, now: Date): Date {
+  const start = new Date(shift.startAt).getTime()
+  const end = new Date(shift.endAt).getTime()
+  const clamped = Math.min(Math.max(now.getTime(), start), end)
+  return new Date(clamped)
+}
+
+/**
  * Offset in minutes (east of UTC) that `timeZone` was at the given instant.
  * Derived by formatting the instant as wall-clock in that zone and measuring
  * the difference, which is DST-correct by construction.

@@ -6,6 +6,7 @@ import type { TaskGraph } from "./graph.js"
 import { decideNext } from "./next.js"
 import { compareRanked, rankTasks } from "./priority.js"
 import type { RankedTask } from "./priority.js"
+import { effectivePlanningStart } from "./time.js"
 
 const MINUTE_MS = 60_000
 
@@ -63,12 +64,17 @@ export function planShift({ shift, tasks, now }: PlanInput): WorkPlan {
   const leftRanked = [...leftover].sort(compareRanked)
   const cycleIds = findCycleMembers(leftRanked, graph)
 
+  // Canonical schedulable horizon: before the shift, plan from shiftStart, not
+  // from pre-shift wall-clock time (docs/architecture.md §4). Priority/deadline
+  // scoring stays on the real `now` above — only placement is clamped.
+  const planStart = effectivePlanningStart(shift, now).getTime()
+
   const sequence: ScheduledTask[] = []
   const missingDurationIds: string[] = []
   const cannotFitIds: string[] = []
-  let cursor = now.getTime()
+  let cursor = planStart
 
-  const context = { now, shiftEnded, cursor: () => cursor, shift, graph, cycleIds }
+  const context = { now, planStart, shiftEnded, cursor: () => cursor, shift, graph, cycleIds }
   for (const entry of picked) {
     const scheduled = { ...scheduleEntry(entry, context), position: sequence.length }
     sequence.push(scheduled)
@@ -97,7 +103,7 @@ export function planShift({ shift, tasks, now }: PlanInput): WorkPlan {
   const shiftEnd = new Date(shift.endAt).getTime()
   const availableMinutes = shiftEnded
     ? 0
-    : Math.max(0, Math.round((shiftEnd - now.getTime()) / MINUTE_MS))
+    : Math.max(0, Math.round((shiftEnd - planStart) / MINUTE_MS))
   const scheduledMinutes = sequence.reduce(
     (sum, entry) =>
       sum + (entry.fits ? (entry.task.estimatedMinutes ?? DEFAULT_DURATION_MINUTES) : 0),
@@ -120,6 +126,7 @@ export function planShift({ shift, tasks, now }: PlanInput): WorkPlan {
 
 interface ScheduleContext {
   now: Date
+  planStart: number
   shiftEnded: boolean
   cursor: () => number
   shift: Shift
@@ -179,7 +186,7 @@ function scheduleEntry(rank: RankedTask, ctx: ScheduleContext): ScheduledTask {
   }
 
   const shiftEnd = new Date(ctx.shift.endAt).getTime()
-  const start = Math.max(ctx.now.getTime(), ctx.cursor())
+  const start = Math.max(ctx.planStart, ctx.cursor())
   const end = start + duration * MINUTE_MS
   const fits = !ctx.shiftEnded && end <= shiftEnd
   if (!fits) {

@@ -5,6 +5,7 @@ import { dependencyOrder, findCycleMembers, unmetDependencies } from "./graph.js
 import type { TaskGraph } from "./graph.js"
 import { compareRanked, rankTasks } from "./priority.js"
 import type { RankedTask } from "./priority.js"
+import { effectivePlanningStart } from "./time.js"
 
 const MINUTE_MS = 60_000
 
@@ -91,7 +92,9 @@ export function decideNext({ shift, tasks, now, cycleIds, graph }: NextInput): N
     kind: "task",
     taskId: best.entry.task.id,
     title: best.entry.task.title,
-    startAt: now.toISOString(),
+    // Propose a start clamped to the shift: before the shift this is shiftStart,
+    // never an impossible pre-shift "start now" (docs/architecture.md §4).
+    startAt: effectivePlanningStart(shift, now).toISOString(),
     reasons,
     alternatives: alternatives.map(({ entry }) => ({
       taskId: entry.task.id,

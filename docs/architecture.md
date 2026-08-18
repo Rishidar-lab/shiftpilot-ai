@@ -214,9 +214,15 @@ with every ranked task and rendered as human text (`"overdue by 1h05m · custome
 
 ### Schedule projection (used by plan view and "what next")
 
-From `now` to shift end: walk the sequence, `start = max(now, prevEnd)`, `end = start +
-estimateMin`. Tasks that do not fit before shift end are flagged `overflow` (explicit), and
-the plan recommends revisiting them — **never silently dropped or re-prioritized**.
+From the **effective planning start** to shift end: walk the sequence, `start = max(planStart,
+prevEnd)`, `end = start + estimateMin`. The planning start is `now` clamped to the shift's own
+bounds (`time.ts:effectivePlanningStart`): before the shift it is `shiftStart`, during the
+shift it is `now`, after the shift the window is empty. Planning therefore never runs against
+pre-shift wall-clock time — a 09:00–17:00 shift viewed at 02:55 has 480 minutes of capacity
+and its first task at 09:00, not 845 minutes and a task at 02:54. Capacity (`availableMinutes`)
+and "what next" derive from the same clamped start, so they can never disagree. Tasks that do
+not fit before shift end are flagged `overflow` (explicit), and the plan recommends revisiting
+them — **never silently dropped or re-prioritized**.
 
 ### "What should I do next?"
 
