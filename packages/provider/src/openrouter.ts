@@ -225,7 +225,11 @@ export class OpenRouterProvider implements AiProvider {
       let payload: ChatCompletionResponse
       try {
         payload = (await raw.json()) as ChatCompletionResponse
-      } catch {
+      } catch (error) {
+        // The deadline can expire while the body is still streaming. That is our
+        // timeout, not a malformed provider response, and calling it "not JSON"
+        // sends whoever is debugging it after the wrong system.
+        if (isAbortError(error)) return { ok: false, failure: mapTransportError(error) }
         return {
           ok: false,
           failure: { kind: "invalid_response", detail: "response body was not JSON" },
@@ -318,8 +322,22 @@ function attemptJsonParse(text: string): unknown | null {
   }
 }
 
+/**
+ * `AbortSignal.timeout()` aborts with a **TimeoutError**, not an `AbortError`,
+ * and `AbortSignal.any` forwards that reason verbatim — so matching only
+ * `AbortError` reports an expired deadline as an unreachable network. Both names
+ * mean the same thing to a caller: the attempt ran out of time.
+ */
+function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === "AbortError" || error.name === "TimeoutError"
+  }
+  // undici wraps the abort reason rather than throwing it directly.
+  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")
+}
+
 function mapTransportError(error: unknown): ProviderFailure {
-  if (error instanceof DOMException && error.name === "AbortError") {
+  if (isAbortError(error)) {
     return { kind: "timeout" }
   }
   return { kind: "network", message: "could not reach the AI provider" }

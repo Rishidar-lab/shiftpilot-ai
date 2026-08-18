@@ -253,6 +253,51 @@ describe("OpenRouterProvider failure mapping", () => {
     }
   })
 
+  it("reports an expired deadline as a timeout, not an unreachable network", async () => {
+    // AbortSignal.timeout() aborts with TimeoutError, never AbortError.
+    const fetchFn = vi.fn().mockRejectedValue(new DOMException("timed out", "TimeoutError"))
+    const attempt = await providerWith(fetchFn as unknown as typeof fetch).extractTasks("x", CTX)
+    expect(attempt.ok).toBe(false)
+    if (!attempt.ok) expect(attempt.failure.kind).toBe("timeout")
+  })
+
+  it("still reports a caller-cancelled request as a timeout", async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError"))
+    const attempt = await providerWith(fetchFn as unknown as typeof fetch).extractTasks("x", CTX)
+    expect(attempt.ok).toBe(false)
+    if (!attempt.ok) expect(attempt.failure.kind).toBe("timeout")
+  })
+
+  it("blames the deadline, not the provider, when the body read is aborted", async () => {
+    // Headers arrived; the deadline expired mid-body. Calling that a malformed
+    // provider response sends the reader after the wrong system entirely.
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => {
+        throw new DOMException("timed out", "TimeoutError")
+      },
+    })
+    const attempt = await providerWith(fetchFn as unknown as typeof fetch).extractTasks("x", CTX)
+    expect(attempt.ok).toBe(false)
+    if (!attempt.ok) expect(attempt.failure.kind).toBe("timeout")
+  })
+
+  it("still reports a genuinely malformed body as an invalid response", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => {
+        throw new SyntaxError("Unexpected token < in JSON")
+      },
+    })
+    const attempt = await providerWith(fetchFn as unknown as typeof fetch).extractTasks("x", CTX)
+    expect(attempt.ok).toBe(false)
+    if (!attempt.ok) expect(attempt.failure.kind).toBe("invalid_response")
+  })
+
   it("maps a provider-level error body without echoing credentials", async () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: true,

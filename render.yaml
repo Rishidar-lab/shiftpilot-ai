@@ -56,6 +56,21 @@ services:
         value: "2"
       - key: OPENROUTER_BASE_URL
         value: https://openrouter.ai/api/v1
+      # Output ceiling. The canonical demo workload is 11 lines, and 11 extracted
+      # tasks of JSON land right at the 1024-token default — a truncated object
+      # is unparseable and surfaces as a failed extraction. 2048 clears it with
+      # room to spare and still costs nothing on a free route.
+      - key: OPENROUTER_MAX_OUTPUT_TOKENS
+        value: "2048"
+      # Total wall-clock budget for one inference, enforced by the API
+      # (withTimeout) on top of the provider's own per-attempt deadline.
+      #
+      # These two numbers are coupled: the provider divides the budget across
+      # attempts, so per-attempt = 90s / (2 retries + 1) = 30s. A free model
+      # extracting the full demo workload needs well over the 10s that the
+      # default 30s budget would have left it here.
+      - key: AI_TIMEOUT_MS
+        value: "90000"
       # Entered in the Render dashboard, never committed. Use a NEW rotated key.
       - key: OPENROUTER_API_KEY
         sync: false
