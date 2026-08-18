@@ -2258,6 +2258,22 @@ label.field-label {
     min-height: 44px;
   }
 
+  /* The example chips are the fastest way into the product on a phone, so they
+     get the same 44px touch target as every other primary control here. */
+  .example-chip {
+    min-height: 44px;
+    padding-inline: 1rem;
+  }
+
+  .rail-link {
+    min-height: 44px;
+  }
+
+  /* Small buttons are still real touch targets on a phone. */
+  .btn-sm {
+    min-height: 44px;
+  }
+
   .pipeline-stages {
     grid-template-columns: 1fr;
   }

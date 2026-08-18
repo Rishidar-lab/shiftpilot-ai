@@ -23,14 +23,21 @@ export function ShiftHeader({
   client,
   shift,
   shiftError,
+  refreshKey,
 }: {
   client: ApiClient
   shift: Shift | null
   shiftError: string | null
+  /**
+   * Bumped whenever approval or a task action changes the shift. The header
+   * runs its own plan query, so without this it would keep rendering the
+   * numbers from before the change while the plan beside it shows the new ones.
+   */
+  refreshKey: number
 }) {
   const plan = useAsync(
     () => (shift ? client.getPlan(shift.id) : Promise.resolve(null)),
-    [client, shift?.id],
+    [client, shift?.id, refreshKey],
   )
   const planData = plan.state.status === "ready" ? plan.state.data : null
   const load = planData?.load ?? null

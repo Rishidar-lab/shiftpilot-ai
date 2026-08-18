@@ -12,7 +12,16 @@ import { AsyncPanel } from "./AsyncPanel.js"
  * is a derived projection, so the way to keep it fresh is to recompute it, never
  * to patch it client-side.
  */
-export function PlanView({ client, shiftId }: { client: ApiClient; shiftId: string }) {
+export function PlanView({
+  client,
+  shiftId,
+  onChanged,
+}: {
+  client: ApiClient
+  shiftId: string
+  /** Tells the shift header its numbers moved, without remounting this view. */
+  onChanged?: () => void
+}) {
   const plan = useAsync<WorkPlan>(() => client.getPlan(shiftId), [shiftId])
   const next = useAsync<NextDecision>(() => client.getNext(shiftId), [shiftId])
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null)
@@ -26,6 +35,7 @@ export function PlanView({ client, shiftId }: { client: ApiClient; shiftId: stri
     try {
       await action()
       await Promise.all([plan.reload(), next.reload()])
+      onChanged?.()
       showToast(verb)
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : "Could not update the task")

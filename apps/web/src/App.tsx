@@ -101,6 +101,13 @@ function WorkspaceView({
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
   const [view, setView] = useState<View>(initialView)
   const [refreshKey, setRefreshKey] = useState(0)
+  /**
+   * Separate from refreshKey on purpose. refreshKey is in PlanView's `key`, so
+   * bumping it remounts the plan and throws away its local state — including the
+   * "Plan updated" confirmation the user is meant to read. The header only needs
+   * to re-run its own query, so task actions bump this instead.
+   */
+  const [statsKey, setStatsKey] = useState(0)
   const [creating, setCreating] = useState(false)
   const [shiftError, setShiftError] = useState<string | null>(null)
 
@@ -185,7 +192,12 @@ function WorkspaceView({
 
       <main className="workspace">
         <div className="workspace-top">
-          <ShiftHeader client={client} shift={selected} shiftError={shiftError} />
+          <ShiftHeader
+            client={client}
+            shift={selected}
+            shiftError={shiftError}
+            refreshKey={refreshKey + statsKey}
+          />
           <nav className="workspace-tabs" aria-label="Shift views">
             {VIEWS.map((tab) => (
               <button
@@ -232,6 +244,7 @@ function WorkspaceView({
                   key={`plan-${selected.id}-${refreshKey}`}
                   client={client}
                   shiftId={selected.id}
+                  onChanged={() => setStatsKey((k) => k + 1)}
                 />
               )}
               {view === "handover" && (

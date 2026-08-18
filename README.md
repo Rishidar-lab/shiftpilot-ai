@@ -307,7 +307,7 @@ pnpm format           # prettier --check .
 pnpm build            # api bundle (tsup) + web bundle (vite)
 ```
 
-**311 tests** cover the domain engines (deadlines/timezones, dependency cycles, duplicate
+**313 tests** cover the domain engines (deadlines/timezones, dependency cycles, duplicate
 approval, What Next, handover fallback), the provider boundary (free-model guard, failure
 mapping, degraded paths), the API (rate limiting, intake, review, approval), and the web
 UI (loading/error/retry states, landing routing, demo composer). CI runs install → lint →
@@ -370,11 +370,17 @@ MIT — see `LICENSE`.
 
 ## Screenshots
 
-Captured on 16 Aug 2026 from the live web app driving the real pipeline with the verified
-OpenRouter free route (`google/gemma-4-26b-a4b-it:free`) — the "Live AI · …" badge in frame
-is what the run actually used. Screenshots are taken from the running app after genuinely
-driving the full flow; nothing is staged. Viewport checks at 390px and 768px report zero
-horizontal overflow.
+Captured on 18 Aug 2026 from the production build (the same single-service bundle the
+container serves), by genuinely driving the full flow — type the workload, extract, review,
+approve, plan, complete, hand over. Nothing is staged, mocked up, or retouched.
+
+These runs use the offline `FakeAiProvider`, and the **"Simulated AI · no real LLM"** badge
+is deliberately left in frame: the one thing this project will not do is let simulated
+output pass for a model. Evidence for the real free-tier route lives where it belongs — the
+live deployment above, and the recorded evaluation in `docs/eval/`.
+
+Viewport checks at 390px, 768px and 1440px report zero horizontal overflow, no console
+errors, and no touch target under 44px.
 
 **Landing** — the story in one screen: messy work in, explainable plan out, and the one rule
 that keeps the AI in its lane:
