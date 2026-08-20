@@ -307,7 +307,7 @@ pnpm format           # prettier --check .
 pnpm build            # api bundle (tsup) + web bundle (vite)
 ```
 
-**320 tests** cover the domain engines (deadlines/timezones, dependency cycles, duplicate
+**341 tests** cover the domain engines (deadlines/timezones, dependency cycles, duplicate
 approval, What Next, handover fallback), the provider boundary (free-model guard, failure
 mapping, degraded paths), the API (rate limiting, intake, review, approval), and the web
 UI (loading/error/retry states, landing routing, demo composer). CI runs install → lint →
@@ -317,9 +317,27 @@ offline suite.
 
 ## Demo
 
-`docs/demo-script.md` is a 2–4 minute walkthrough and `docs/demo-seed-data.md` is the
-prepared input. The demo runs entirely in fake mode (or, optionally, against the verified
-free OpenRouter route) — no credentials are shown on screen.
+**Demo video URL:** [ADD AFTER UPLOAD]
+
+A 1:41 screen recording of the real application driving the full workflow end to end:
+messy shift text → AI extraction → human review and approval → deterministic plan →
+dependency-blocked work → replanning → handover.
+
+- **It is the actual application**, recorded live in the browser against the running
+  build — not a mockup, a prototype, an animation, or a re-enactment. The interactions
+  are driven by a scripted runner so the take is reproducible, but every screen, API
+  call and response in frame is the real system. It is one continuous take: no cuts,
+  no speed changes, no retouching.
+- **The AI calls are real.** The run is gated on `providerIsFake=false` before recording
+  starts, so the extraction shown is the live OpenRouter free route
+  (`google/gemma-4-26b-a4b-it:free`), and the on-screen audit line says so.
+- **The voice-over is synthetic** — a local open-weights TTS voice, not a human
+  recording and not a cloned speaker. The captions are the narration verbatim.
+- No credentials, keys, or personal data appear on screen.
+
+`docs/demo-script.md` is the 2–4 minute walkthrough script and `docs/demo-seed-data.md`
+is the prepared input, so the same run is reproducible locally — in fake mode with no
+credentials, or against the verified free OpenRouter route.
 
 ## Stack
 

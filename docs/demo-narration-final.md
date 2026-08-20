@@ -127,7 +127,7 @@ non-task line, reject it here — don't force one just for the camera.]
 any code on screen under ~10 seconds.]
 
 > "Under the surface: a typed API boundary, human approval as a hard gate, deterministic
-> scheduling, failure-safe provider handling, 320 automated tests, CI, and a live Render
+> scheduling, failure-safe provider handling, 341 automated tests, CI, and a live Render
 > deployment."
 
 ## 3:05–3:15 — Close

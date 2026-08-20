@@ -88,7 +88,7 @@ with a retry button — no silent fallback.)
 ## 3:00–3:20 — Architecture, tests, links
 
 Fast close with on-screen labels, no code: "Clean separation — the AI reads language, the
-domain decides everything operational. Human approval is a hard gate. 320 tests, fully
+domain decides everything operational. Human approval is a hard gate. 341 tests, fully
 offline CI, no secrets in CI. Monorepo: React + Fastify + SQLite, TypeScript strict."
 Mention the live free-tier OpenRouter verification only if it fits the moment (see
 "Recording with real AI" below). End on the one-liner: **"AI interprets. Human verifies.

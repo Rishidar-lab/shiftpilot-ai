@@ -17,7 +17,7 @@ the environment of the run machine only and has been flagged for rotation (see
 | Every response served by the configured free model     | `resolvedModel` in run reports and in each recorded fixture                                                                                                                    |
 | Recorded (real) responses are in the repo              | `packages/provider/fixtures/extraction/recorded-*.json` (6 files, `"source": "recorded"`, model + resolvedModel + prompt version per file)                                     |
 | No AI step can approve/activate/complete/schedule      | `docs/architecture.md` §5–6; the eval report shows candidates landing in a review queue, never in tasks                                                                        |
-| Offline suite proves everything above without network  | `pnpm test` (283 tests, 21 files), CI workflow needs no secrets                                                                                                                |
+| Offline suite proves everything above without network  | `pnpm test` (283 tests, 21 files at this 2026-08-14 run; 341 tests, 27 files on `main` today), CI workflow needs no secrets                                                    |
 
 ## The numbers (2026-08-14, Asia/Kolkata shift, prompts v3)
 
