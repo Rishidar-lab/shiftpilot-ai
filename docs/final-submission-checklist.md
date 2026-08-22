@@ -7,6 +7,10 @@ Nothing below is ticked on your behalf. Every unticked box is an action only you
 an account, a camera, or a form. The engineering side is finished and frozen; see
 "Already done" at the bottom for what is not waiting on anyone.
 
+Recording package: `submission/week1/recording_shotlist.md` (exact commands/URL/inputs/
+what-must-and-must-not-be-visible) and `submission/week1/VIDEO_ASSET_INVENTORY.md`
+(the existing recorded video is already final — see there before recording a new one).
+
 ---
 
 ## MUST COMPLETE BEFORE AUGUST 20
