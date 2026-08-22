@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "pnpm -r --if-present run build",
+    "security:deps": "node scripts/security-deps.mjs",
     "db:generate": "pnpm --filter @shiftpilot/api db:generate",
     "db:migrate": "pnpm --filter @shiftpilot/api db:migrate",
     "eval:claude": "pnpm --filter @shiftpilot/api eval:claude",

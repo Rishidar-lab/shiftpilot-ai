@@ -63,6 +63,31 @@ Deterministic planner — ordering, deadlines, dependencies, capacity
 Plan · What Next · Handover
 ```
 
+## Engineering focus
+
+What this project is actually trying to demonstrate, in order:
+
+- **Operational/decision intelligence, not a chat wrapper.** The AI never
+  makes an operational decision — it only interprets language into
+  candidate facts; every priority, sequence, deadline resolution, and
+  dependency edge is computed by deterministic, unit-tested domain code
+  (`packages/domain`). See "Who decides what" below.
+- **Structured AI workflow with an enforced trust boundary.** Provider
+  output is untrusted JSON until it passes zod schema validation and
+  domain policy — never persisted, never scheduled, never trusted as-is.
+- **Explicit failure handling, not silent degradation.** A rejected AI
+  configuration is a boot-time failure, not a silent fallback; a failed
+  handover call renders deterministic facts with a "degraded" label
+  instead of hiding the failure. See "Failure and degraded modes" below.
+- **Software-supply-chain awareness.** All 5 internal packages are
+  privately scoped and workspace-linked, verified against the actual
+  lockfile (not just the manifests) by a CI-enforced guard — see
+  `docs/SUPPLY_CHAIN_SECURITY.md`.
+- **Reproducibility.** Exact pnpm version pinned via `packageManager`,
+  lockfile enforced with `--frozen-lockfile` in CI, and a fresh-database
+  migration smoke test proves the schema applies cleanly from empty, not
+  just against a pre-seeded dev database.
+
 ## Architecture at a glance
 
 ```mermaid
@@ -211,6 +236,52 @@ made a live call and is not the Week-1 verified provider.)
   (nothing it returns can approve, activate, complete, or schedule).
 - Secret scans cover the working tree, the Git index, and Git history; the API key used
   during verification has been flagged for rotation before public publication.
+
+## What failed, and what I learned
+
+Real findings from this project's development history (`git log`), not
+manufactured for effect.
+
+**The pre-shift planning-horizon bug.** _Observed_: viewing a 09:00–17:00
+shift at 02:55 showed 845 minutes of capacity and a first task scheduled
+at 02:54, both wrong — the scheduler was anchoring to wall-clock `now`
+instead of the shift's own start. Named directly in the regression test
+that fixed it (`planning-horizon.test.ts`, comment: "the demo bug") — this
+was found while preparing to demo the product, the worst time to find a
+scheduling bug. _Fix_: clamp the effective planning start to
+`max(now, shiftStart)` everywhere the scheduler, capacity figure, and
+"what next" all read the current time. _Lesson_: "unit tested" isn't the
+same as "tested against the state the demo will actually be in" —
+`planShift()` had correct unit tests for during-shift and after-shift, but
+no test had ever exercised before-shift.
+
+**The retry budget that made reliability worse.** _Observed_: enabling 2
+retries against a slow free-tier route (42–129s measured) made every
+attempt fail, not fewer. _Diagnosis_: retries were splitting the total
+timeout into equal slices — 3 attempts against a 93s budget gave each one
+31s, well under what a real generation call needs, so every attempt
+timed out regardless of whether a retry was even warranted. _Fix_: each
+attempt now runs against a shared deadline and takes whatever time
+remains, so a cheap 429 (which resolves in ~1s) barely touches the
+budget and a slow real attempt can use nearly all of it. _Lesson_: a
+retry policy is not free insurance — "add retries" can be a strictly
+worse config than "don't retry" if the retry budgeting itself is wrong,
+and the failure mode (every attempt times out) looks identical to "the
+route is just too slow" unless you specifically check how the timeout was
+divided.
+
+**A verification-time API key pasted into a chat transcript.** _Observed_:
+a real key used for manual OpenRouter verification ended up in a chat
+transcript and, as of the last recorded check, had not been revoked.
+_Mitigation_: the live deployment uses a separate key stored only in
+Render's secret store, so the exposure doesn't affect the running
+service — but the exposed key itself is still a live, real, unresolved
+finding until revoked on the OpenRouter account (external action, not
+fixable from this repository). _Lesson_: a secret doesn't have to reach
+Git to be a real exposure — a verification workflow that pastes a live
+key into any transcript-logging surface needs the same "never reaches a
+persistent record" discipline as `.env` handling gets, and currently
+doesn't have it.
 
 ## Getting started
 
