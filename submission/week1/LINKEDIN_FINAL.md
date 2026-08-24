@@ -11,41 +11,37 @@ submission set).
 
 **ShiftPilot — my Week-1 build for the Innovation Hacks AI Internship 2026**
 
-Frontline and operational workers usually receive their work as a messy
-text dump — deadlines, durations, interruptions, one urgent item, a couple
-of non-tasks buried in the middle. Typing that into a task list just moves
-the parsing and prioritizing work onto the human.
+Frontline workers usually get their shift as a messy text dump —
+deadlines, durations, one urgent item, a couple of non-tasks buried in the
+middle. Typing that into a task list just moves the parsing work onto the
+human.
 
 ShiftPilot turns that dump into an ordered, explainable work plan, under
-one rule I designed the whole system around:
+one rule the whole system is built around:
 
 **AI interprets. Human verifies. Deterministic software decides.**
 
-The reason that split exists: an LLM is good at pulling structure out of
-messy text — durations, dependencies, an urgent flag, a deadline phrase —
-but it is not a reliable place to put the actual scheduling decision.
-Priority ordering, deadline math, dependency resolution, and "what should I
-do next" all need to be the same answer every time given the same state,
-auditable, and immune to a model having an off day. So:
+An LLM is good at pulling structure out of messy text — durations, an
+urgent flag, a deadline phrase. It is not a reliable place to put the
+scheduling decision itself. So:
 
 - **AI extraction is real and live** — OpenRouter, free tier only, guarded
-  by a hard free-model check on every request; there is no paid fallback,
-  ever.
-- **Humans hold the power** — every extracted candidate is a draft.
-  Nothing becomes an operational task until a person edits, rejects, or
-  approves it. `approveIntake()` is the only place a task row is ever
-  created.
-- **Scheduling is deterministic** — priority, ordering, deadlines
-  (shift-local, timezone-aware), dependency graphs (with real cycle
-  detection), and end-of-shift handover are all computed by tested,
-  pure domain functions. The model never sets a priority and never
-  touches the schedule.
-- **Failure is designed, not hidden** — invalid model output, a
-  rate-limited route, or a provider outage degrades gracefully and
-  honestly. The app never pretends the AI is on when it isn't.
+  by a hard free-model check on every request, no paid fallback ever.
+- **Humans hold the power** — every extraction is a draft.
+  `approveIntake()` is the only path in the codebase that ever creates a
+  real task row.
+- **Scheduling is deterministic** — priority, deadline math, dependency
+  graphs (with cycle detection), and handover are computed by tested, pure
+  domain functions. The model never touches the schedule.
+- **Failure is designed, not hidden** — a rate-limited route or provider
+  outage degrades honestly instead of pretending the AI is on.
 
-Stack: TypeScript strict, React + Vite, Fastify, SQLite (Drizzle), Zod,
-pnpm monorepo, Vitest — 341 tests, fully offline CI, no secrets in CI.
+The recorded demo shows this boundary directly: a raw shift dump goes in,
+an AI-drafted candidate list comes out still editable, and only after
+human approval does a task exist in the deterministic scheduler.
+
+Stack: TypeScript strict, React + Vite, Fastify, SQLite (Drizzle), pnpm
+monorepo — 341 tests, fully offline CI.
 
 GitHub: https://github.com/Rishidar-lab/shiftpilot-ai
 Live demo: https://shiftpilot-rkmx.onrender.com
