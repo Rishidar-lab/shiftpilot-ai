@@ -1,9 +1,11 @@
 # Week 1 LinkedIn Post — Final Draft (ShiftPilot)
 
-**Status: content final. Two links are placeholders — fill only when real, do
-not guess them.** Canonical source this was finalized from:
-`docs/linkedin-post.md` (kept in place; this file is the publication-ready
-copy for the four-week submission set).
+**Status: content final.** The demo video is now real and public (GitHub
+Release `week1-demo-v1`); the resulting LinkedIn post URL is the one
+remaining placeholder — it cannot exist until this is actually published.
+Canonical source this was finalized from: `docs/linkedin-post.md` (kept in
+place; this file is the publication-ready copy for the four-week
+submission set).
 
 ---
 
@@ -47,7 +49,7 @@ pnpm monorepo, Vitest — 341 tests, fully offline CI, no secrets in CI.
 
 GitHub: https://github.com/Rishidar-lab/shiftpilot-ai
 Live demo: https://shiftpilot-rkmx.onrender.com
-Demo video: **[ADD DEMO VIDEO URL AFTER UPLOAD]**
+Demo video: https://github.com/Rishidar-lab/shiftpilot-ai/releases/tag/week1-demo-v1
 
 #InnovationHacks #AIInternship2026 #AIEngineering #TypeScript
 **[ADD OFFICIAL INNOVATION HACKS TAG/HANDLE/URL IF the program specifies one beyond the hashtag]**
@@ -56,7 +58,7 @@ Demo video: **[ADD DEMO VIDEO URL AFTER UPLOAD]**
 
 ## Publishing checklist (do not skip)
 
-- [ ] Replace the demo-video placeholder with the real upload URL — never guess it.
+- [x] Replaced the demo-video placeholder with the real, publicly-verified release URL above (unbranded — no intro/outro asset exists; disclosed in `FINAL_VIDEO_QA.md`, not hidden).
 - [ ] Wake the free Render instance before sharing the live-demo link (open it once so the first visitor doesn't hit a cold-start spinner).
 - [ ] Keep the exact claims as written: controlled verification, not a benchmark; no accuracy percentage claims; no "production-ready" language; free tier only.
 - [ ] Do not publish while any link above is still a placeholder.

@@ -388,7 +388,7 @@ offline suite.
 
 ## Demo
 
-**Demo video URL:** [ADD AFTER UPLOAD]
+**Demo video URL:** https://github.com/Rishidar-lab/shiftpilot-ai/releases/tag/week1-demo-v1
 
 A 1:41 screen recording of the real application driving the full workflow end to end:
 messy shift text → AI extraction → human review and approval → deterministic plan →
