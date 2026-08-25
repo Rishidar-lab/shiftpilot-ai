@@ -48,7 +48,6 @@ Live demo: https://shiftpilot-rkmx.onrender.com
 Demo video: https://github.com/Rishidar-lab/shiftpilot-ai/releases/tag/week1-demo-v1
 
 #InnovationHacks #AIInternship2026 #AIEngineering #TypeScript
-**[ADD OFFICIAL INNOVATION HACKS TAG/HANDLE/URL IF the program specifies one beyond the hashtag]**
 
 ---
 
