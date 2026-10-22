@@ -6,7 +6,7 @@
 
 - IMPLEMENTED / TESTED: NL→task extraction with a hard free-only OpenRouter model guard, deterministic scheduler, FakeAiProvider offline path; CI green on `main`.
 - LIVE-VERIFIED: hosted at <https://shiftpilot-rkmx.onrender.com> (Render free tier; cold-starts).
-- LIMITS: single-process SQLite, in-process rate limiting; see *Limitations* below. No further feature work is planned.
+- LIMITS: single-process SQLite, in-process rate limiting; see _Limitations_ below. No further feature work is planned.
 
 An AI-assisted workload planning system that converts messy natural-language work into
 reviewable structured tasks and an explainable deterministic schedule.
